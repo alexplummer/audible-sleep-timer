@@ -46,6 +46,7 @@ const App = () => {
   const [inputValue, setInputValue] = useState(lastSelectedDuration.toString());
   const [timer, setTimer] = useState(lastSelectedDuration * 60);
   const [running, setRunning] = useState(false);
+  const [paused, setPaused] = useState(false);
   const intervalRef = useRef<number | null>(null);
   const sliderWidth = Dimensions.get('window').width - 80; // Account for padding
 
@@ -83,11 +84,65 @@ const App = () => {
     const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
     const subscription = mediaButtonEventEmitter.addListener('MediaButtonPlayPressed', () => {
       console.log('Hardware play button pressed - starting timer');
-      setTimer(timerMinutes * 60);
-      setRunning(true);
+      // Only start if not already running to prevent double timers
+      if (!running) {
+        setTimer(timerMinutes * 60);
+        setRunning(true);
+      } else {
+        console.log('Timer already running, ignoring hardware button press');
+      }
+    });
+    return () => subscription.remove();
+  }, [timerMinutes, running]);
+
+  // Listen for app close events
+  useEffect(() => {
+    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
+    const subscription = mediaButtonEventEmitter.addListener('AppCloseRequested', () => {
+      console.log('App close requested - cleaning up and closing');
+      // Clean up any running timers
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      // Note: The native side will handle the actual app closure
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // Listen for native timer completion events
+  useEffect(() => {
+    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
+    const subscription = mediaButtonEventEmitter.addListener('TimerCompleted', () => {
+      console.log('Native timer completed - stopping UI timer');
+      setRunning(false);
+      setPaused(false);
+      setTimer(timerMinutes * 60); // Reset to original duration
     });
     return () => subscription.remove();
   }, [timerMinutes]);
+
+  // Listen for native timer pause events
+  useEffect(() => {
+    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
+    const subscription = mediaButtonEventEmitter.addListener('TimerPaused', () => {
+      console.log('Native timer paused - pausing UI timer');
+      setPaused(true);
+      setRunning(false); // Stop the UI countdown
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // Listen for native timer resume events
+  useEffect(() => {
+    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
+    const subscription = mediaButtonEventEmitter.addListener('TimerResumed', () => {
+      console.log('Native timer resumed - resuming UI timer');
+      setPaused(false);
+      setRunning(true); // Resume the UI countdown
+    });
+    return () => subscription.remove();
+  }, []);
 
   // Update native timer duration whenever timerMinutes changes
   useEffect(() => {
@@ -118,6 +173,7 @@ const App = () => {
     if (running && timer === 0) {
       console.log('Timer completed');
       setRunning(false);
+      setPaused(false);
     }
   }, [timer, running]);
 
@@ -137,10 +193,23 @@ const App = () => {
   const handleStartStop = () => {
     if (running) {
       setRunning(false);
+      setPaused(false);
       setTimer(timerMinutes * 60);
+    } else if (paused) {
+      // Resume from paused state
+      setPaused(false);
+      setRunning(true);
+      
+      // Trigger Audible to resume playing
+      if (NativeModules.MediaButtonEvent) {
+        NativeModules.MediaButtonEvent.startAudible()
+          .then((message: string) => console.log('Audible resumed from paused state:', message))
+          .catch((error: any) => console.error('Failed to resume Audible:', error));
+      }
     } else {
       setTimer(timerMinutes * 60);
       setRunning(true);
+      setPaused(false);
       
       // Trigger Audible to start playing when start button is pressed
       if (NativeModules.MediaButtonEvent) {
@@ -233,7 +302,7 @@ const App = () => {
               <View style={styles.timerDisplay}>
                 <Text style={styles.timerText}>{formatTime(timer)}</Text>
                 <Text style={styles.timerStatus}>
-                  {running ? 'Running' : 'Stopped'}
+                  {running ? 'Running' : paused ? 'Paused' : 'Stopped'}
                 </Text>
               </View>
               
@@ -242,7 +311,7 @@ const App = () => {
                 onPress={handleStartStop}
               >
                 <Text style={styles.startButtonText}>
-                  {running ? 'Stop' : 'Start'} Timer
+                  {running ? 'Stop' : paused ? 'Resume' : 'Start'} Timer
                 </Text>
               </TouchableOpacity>
             </View>

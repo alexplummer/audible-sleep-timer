@@ -44,6 +44,40 @@ public class MediaButtonEventModule extends ReactContextBaseJavaModule {
         }
     }
 
+    @ReactMethod
+    public void closeApp(Promise promise) {
+        try {
+            android.util.Log.d("MediaButtonEventModule", "closeApp called from React Native");
+            
+            // Stop the foreground service
+            android.content.Intent serviceIntent = new android.content.Intent(reactContext, com.sleeptimer.service.ForegroundService.class);
+            reactContext.stopService(serviceIntent);
+            
+            // Emit close event to JavaScript so it can finish properly
+            sendCloseAppEvent();
+            
+            // Close the main activity after a short delay to allow JS cleanup
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                try {
+                    if (getCurrentActivity() != null) {
+                        getCurrentActivity().finishAffinity();
+                    } else {
+                        // Alternative method using system exit
+                        System.exit(0);
+                    }
+                } catch (Exception e) {
+                    android.util.Log.e("MediaButtonEventModule", "Error finishing activity", e);
+                    System.exit(0);
+                }
+            }, 500);
+            
+            promise.resolve("App closing");
+        } catch (Exception e) {
+            android.util.Log.e("MediaButtonEventModule", "Error closing app", e);
+            promise.reject("CLOSE_APP_ERROR", "Failed to close app: " + e.getMessage());
+        }
+    }
+
     public static void sendPlayButtonEvent() {
         android.util.Log.d("MediaButtonEventModule", "sendPlayButtonEvent called. reactContext is " + (reactContext == null ? "null" : "not null"));
         if (reactContext != null) {
@@ -51,6 +85,54 @@ public class MediaButtonEventModule extends ReactContextBaseJavaModule {
                 .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
                 .emit("MediaButtonPlayPressed", null);
             android.util.Log.d("MediaButtonEventModule", "MediaButtonPlayPressed event emitted to JS");
+        } else {
+            android.util.Log.e("MediaButtonEventModule", "Cannot emit event: reactContext is null");
+        }
+    }
+
+    public static void sendCloseAppEvent() {
+        android.util.Log.d("MediaButtonEventModule", "sendCloseAppEvent called. reactContext is " + (reactContext == null ? "null" : "not null"));
+        if (reactContext != null) {
+            reactContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                .emit("AppCloseRequested", null);
+            android.util.Log.d("MediaButtonEventModule", "AppCloseRequested event emitted to JS");
+        } else {
+            android.util.Log.e("MediaButtonEventModule", "Cannot emit event: reactContext is null");
+        }
+    }
+
+    public static void sendTimerCompletedEvent() {
+        android.util.Log.d("MediaButtonEventModule", "sendTimerCompletedEvent called. reactContext is " + (reactContext == null ? "null" : "not null"));
+        if (reactContext != null) {
+            reactContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                .emit("TimerCompleted", null);
+            android.util.Log.d("MediaButtonEventModule", "TimerCompleted event emitted to JS");
+        } else {
+            android.util.Log.e("MediaButtonEventModule", "Cannot emit event: reactContext is null");
+        }
+    }
+
+    public static void sendTimerPausedEvent() {
+        android.util.Log.d("MediaButtonEventModule", "sendTimerPausedEvent called. reactContext is " + (reactContext == null ? "null" : "not null"));
+        if (reactContext != null) {
+            reactContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                .emit("TimerPaused", null);
+            android.util.Log.d("MediaButtonEventModule", "TimerPaused event emitted to JS");
+        } else {
+            android.util.Log.e("MediaButtonEventModule", "Cannot emit event: reactContext is null");
+        }
+    }
+
+    public static void sendTimerResumedEvent() {
+        android.util.Log.d("MediaButtonEventModule", "sendTimerResumedEvent called. reactContext is " + (reactContext == null ? "null" : "not null"));
+        if (reactContext != null) {
+            reactContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                .emit("TimerResumed", null);
+            android.util.Log.d("MediaButtonEventModule", "TimerResumed event emitted to JS");
         } else {
             android.util.Log.e("MediaButtonEventModule", "Cannot emit event: reactContext is null");
         }

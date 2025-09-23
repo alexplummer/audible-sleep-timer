@@ -14,6 +14,7 @@ public class ForegroundService extends Service {
     private static final String CHANNEL_ID = "SleepTimerForegroundService";
     private static final int NOTIFICATION_ID = 1;
     private static final String TAG = "ForegroundService";
+    private static ForegroundService instance;
     
     public ForegroundService() {
         Log.d(TAG, "ForegroundService constructor called");
@@ -23,6 +24,7 @@ public class ForegroundService extends Service {
     public void onCreate() {
         Log.d(TAG, "ForegroundService onCreate called");
         super.onCreate();
+        instance = this;
         createNotificationChannel();
         MediaButtonReceiver.register(this);
     }
@@ -31,25 +33,8 @@ public class ForegroundService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "ForegroundService onStartCommand called");
         
-        try {
-            NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-                    .setContentTitle("Sleep Timer")
-                    .setContentText("Ready to handle media button presses")
-                    .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-                    .setOngoing(true)
-                    .setPriority(NotificationCompat.PRIORITY_LOW)
-                    .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                    .setAutoCancel(false);
-
-            android.content.Intent notificationIntent = new android.content.Intent(this, com.sleeptimer.MainActivity.class);
-            android.app.PendingIntent pendingIntent = android.app.PendingIntent.getActivity(
-                this, 0, notificationIntent, android.app.PendingIntent.FLAG_IMMUTABLE
-            );
-            builder.setContentIntent(pendingIntent);
-            startForeground(NOTIFICATION_ID, builder.build());
-        } catch (Exception e) {
-            Log.e(TAG, "Error creating notification", e);
-        }
+        // Create initial notification
+        updateNotificationInternal("Ready to handle media button presses", 0);
         
         return START_STICKY;
     }
@@ -57,6 +42,7 @@ public class ForegroundService extends Service {
     @Override
     public void onDestroy() {
         Log.d(TAG, "ForegroundService onDestroy called");
+        instance = null;
         super.onDestroy();
     }
 
@@ -83,6 +69,73 @@ public class ForegroundService extends Service {
             } catch (Exception e) {
                 Log.e(TAG, "Error creating notification channel", e);
             }
+        }
+    }
+    
+    public static void updateNotification(String status, long remainingTimeMs) {
+        if (instance != null) {
+            instance.updateNotificationInternal(status, remainingTimeMs);
+        }
+    }
+    
+    private void updateNotificationInternal(String status, long remainingTimeMs) {
+        try {
+            // Create close app intent
+            android.content.Intent closeIntent = new android.content.Intent(this, CloseAppReceiver.class);
+            closeIntent.setAction(CloseAppReceiver.ACTION_CLOSE_APP);
+            android.app.PendingIntent closePendingIntent = android.app.PendingIntent.getBroadcast(
+                this, 1, closeIntent, android.app.PendingIntent.FLAG_IMMUTABLE
+            );
+
+            String contentText;
+            if (remainingTimeMs > 0) {
+                String timeRemaining = formatTime(remainingTimeMs);
+                contentText = status + " - " + timeRemaining + " remaining";
+            } else {
+                contentText = status;
+            }
+
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                    .setContentTitle("Sleep Timer")
+                    .setContentText(contentText)
+                    .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                    .setOngoing(true)
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
+                    .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                    .setAutoCancel(false)
+                    .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Close App", closePendingIntent);
+
+            android.content.Intent notificationIntent = new android.content.Intent(this, com.sleeptimer.MainActivity.class);
+            android.app.PendingIntent pendingIntent = android.app.PendingIntent.getActivity(
+                this, 0, notificationIntent, android.app.PendingIntent.FLAG_IMMUTABLE
+            );
+            builder.setContentIntent(pendingIntent);
+            
+            android.app.Notification notification = builder.build();
+            
+            // Use startForeground for the first notification, notify for updates
+            if (remainingTimeMs == 0 && "Ready to handle media button presses".equals(status)) {
+                startForeground(NOTIFICATION_ID, notification);
+            } else {
+                NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                if (manager != null) {
+                    manager.notify(NOTIFICATION_ID, notification);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error updating notification", e);
+        }
+    }
+    
+    private String formatTime(long milliseconds) {
+        long seconds = milliseconds / 1000;
+        long minutes = seconds / 60;
+        long hours = minutes / 60;
+        
+        if (hours > 0) {
+            return String.format("%d:%02d:%02d", hours, minutes % 60, seconds % 60);
+        } else {
+            return String.format("%d:%02d", minutes, seconds % 60);
         }
     }
 }

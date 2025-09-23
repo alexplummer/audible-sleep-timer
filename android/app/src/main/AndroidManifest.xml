@@ -65,5 +65,13 @@
           <data android:scheme="package" />
         </intent-filter>
       </receiver>
+      <receiver 
+        android:name="com.sleeptimer.service.CloseAppReceiver" 
+        android:exported="false"
+        android:enabled="true">
+        <intent-filter>
+          <action android:name="com.sleeptimer.CLOSE_APP" />
+        </intent-filter>
+      </receiver>
     </application>
 </manifest>
