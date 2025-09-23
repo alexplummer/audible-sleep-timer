@@ -2,8 +2,8 @@
 
 # 🎧 Audible Sleep Timer
 
-An Android app that creates a customizable sleep timer for Audible audiobooks, controlled entirely through your earbuds' hardware buttons.  
-
+This fixes the built in sleep timer for Audible allowing you to restart the timer from your bluetooth headphones throughtout the night without looking at the screen.
+ 
 This is a [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
 ---
