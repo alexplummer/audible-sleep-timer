@@ -1,0 +1,442 @@
+/**
+ * Sleep Timer App
+ * Configurable timer with hardware media button support
+ */
+
+import React, { useState, useRef, useEffect } from 'react';
+import { NativeEventEmitter, NativeModules } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  StatusBar, 
+  TextInput, 
+  TouchableOpacity,
+  Dimensions,
+  ScrollView
+} from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+
+const DEFAULT_TIMER_DURATION = 15; // 15 minutes default
+const MAX_MINUTES = 60;
+const PRESET_MINUTES = [15, 20, 30, 45, 60];
+
+function formatTime(seconds: number) {
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const s = (seconds % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function formatMinutes(minutes: number) {
+  if (minutes < 60) {
+    return `${minutes}m`;
+  } else {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins === 0 ? `${hours}h` : `${hours}h ${mins}m`;
+  }
+}
+
+const CircularSlider = ({ value, onValueChange, maxValue }: {
+  value: number;
+  onValueChange: (value: number) => void;
+  maxValue: number;
+}) => {
+  const percentage = value / maxValue;
+  const progressAngle = percentage * 360;
+  
+  return (
+    <View style={styles.circularSlider}>
+      <View style={styles.circularTrack}>
+        <View 
+          style={[
+            styles.circularProgress, 
+            { transform: [{ rotate: `${progressAngle}deg` }] }
+          ]} 
+        />
+      </View>
+      <View style={styles.sliderCenter}>
+        <Text style={styles.sliderValue}>{formatMinutes(value)}</Text>
+        <Text style={styles.sliderLabel}>Sleep Timer</Text>
+      </View>
+    </View>
+  );
+};
+
+const App = () => {
+  const [timerMinutes, setTimerMinutes] = useState(DEFAULT_TIMER_DURATION);
+  const [inputValue, setInputValue] = useState(DEFAULT_TIMER_DURATION.toString());
+  const [timer, setTimer] = useState(DEFAULT_TIMER_DURATION * 60);
+  const [running, setRunning] = useState(false);
+  const intervalRef = useRef<number | null>(null);
+
+  // Listen for hardware media button events
+  useEffect(() => {
+    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
+    const subscription = mediaButtonEventEmitter.addListener('MediaButtonPlayPressed', () => {
+      console.log('Hardware play button pressed - starting timer');
+      setTimer(timerMinutes * 60);
+      setRunning(true);
+    });
+    return () => subscription.remove();
+  }, [timerMinutes]);
+
+  // Update native timer duration whenever timerMinutes changes
+  useEffect(() => {
+    if (NativeModules.TimerConfig) {
+      NativeModules.TimerConfig.setTimerDuration(timerMinutes)
+        .then((message: string) => console.log(message))
+        .catch((error: any) => console.error('Failed to set timer duration:', error));
+    }
+  }, [timerMinutes]);
+
+  // Handle timer countdown
+  useEffect(() => {
+    if (running && timer > 0) {
+      intervalRef.current = setInterval(() => {
+        setTimer(t => t > 0 ? t - 1 : 0);
+      }, 1000);
+    } else if (!running && intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [running]);
+
+  // Handle timer completion
+  useEffect(() => {
+    if (running && timer === 0) {
+      console.log('Timer completed');
+      setRunning(false);
+    }
+  }, [timer, running]);
+
+  const handleSliderChange = (increment: boolean) => {
+    const newValue = increment 
+      ? Math.min(timerMinutes + 1, MAX_MINUTES)
+      : Math.max(timerMinutes - 1, 1);
+    setTimerMinutes(newValue);
+    setInputValue(newValue.toString());
+  };
+
+  const handleInputChange = (text: string) => {
+    setInputValue(text);
+    const value = parseInt(text) || 0;
+    if (value > 0 && value <= 999) {
+      setTimerMinutes(value);
+    }
+  };
+
+  const handlePresetPress = (minutes: number) => {
+    setTimerMinutes(minutes);
+    setInputValue(minutes.toString());
+  };
+
+  const handleStartStop = () => {
+    if (running) {
+      setRunning(false);
+      setTimer(timerMinutes * 60);
+    } else {
+      setTimer(timerMinutes * 60);
+      setRunning(true);
+    }
+  };
+
+  return (
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
+        
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Sleep Timer</Text>
+            <Text style={styles.subtitle}>Press headphone button to start</Text>
+          </View>
+
+          {/* Circular Display */}
+          <View style={styles.sliderSection}>
+            <CircularSlider
+              value={timerMinutes}
+              onValueChange={setTimerMinutes}
+              maxValue={MAX_MINUTES}
+            />
+            <View style={styles.sliderControls}>
+              <TouchableOpacity 
+                style={styles.sliderButton}
+                onPress={() => handleSliderChange(false)}
+              >
+                <Text style={styles.sliderButtonText}>-</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.sliderButton}
+                onPress={() => handleSliderChange(true)}
+              >
+                <Text style={styles.sliderButtonText}>+</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Input Section */}
+          <View style={styles.inputSection}>
+            <Text style={styles.inputLabel}>Custom Duration (minutes)</Text>
+            <TextInput
+              style={styles.input}
+              value={inputValue}
+              onChangeText={handleInputChange}
+              keyboardType="numeric"
+              placeholder="Enter minutes"
+              maxLength={3}
+            />
+          </View>
+
+          {/* Preset Buttons */}
+          <View style={styles.presetsSection}>
+            <Text style={styles.presetsLabel}>Quick Select</Text>
+            <View style={styles.presetsGrid}>
+              {PRESET_MINUTES.map((minutes) => (
+                <TouchableOpacity
+                  key={minutes}
+                  style={[
+                    styles.presetButton,
+                    timerMinutes === minutes && styles.presetButtonActive
+                  ]}
+                  onPress={() => handlePresetPress(minutes)}
+                >
+                  <Text style={[
+                    styles.presetButtonText,
+                    timerMinutes === minutes && styles.presetButtonTextActive
+                  ]}>
+                    {formatMinutes(minutes)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Current Timer Display */}
+          <View style={styles.timerSection}>
+            <Text style={styles.timerLabel}>
+              {running ? 'Time Remaining' : 'Timer Set For'}
+            </Text>
+            <Text style={styles.timerDisplay}>
+              {formatTime(timer)}
+            </Text>
+            
+            <TouchableOpacity
+              style={[styles.controlButton, running && styles.controlButtonStop]}
+              onPress={handleStartStop}
+            >
+              <Text style={styles.controlButtonText}>
+                {running ? 'Stop Timer' : 'Start Timer'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </SafeAreaProvider>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+  },
+  sliderSection: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  circularSlider: {
+    width: 200,
+    height: 200,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  circularTrack: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    borderWidth: 15,
+    borderColor: '#e0e0e0',
+    position: 'absolute',
+  },
+  circularProgress: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    borderWidth: 15,
+    borderColor: 'transparent',
+    borderTopColor: '#4CAF50',
+    position: 'absolute',
+  },
+  sliderCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: '#fff',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  sliderValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+    marginBottom: 4,
+  },
+  sliderLabel: {
+    fontSize: 12,
+    color: '#666',
+  },
+  sliderControls: {
+    flexDirection: 'row',
+    gap: 20,
+  },
+  sliderButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  sliderButtonText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  inputSection: {
+    marginBottom: 30,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  input: {
+    borderWidth: 2,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    padding: 15,
+    fontSize: 18,
+    textAlign: 'center',
+    backgroundColor: '#fff',
+  },
+  presetsSection: {
+    marginBottom: 30,
+  },
+  presetsLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  presetsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  presetButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#ddd',
+    minWidth: 70,
+  },
+  presetButtonActive: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  presetButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'center',
+  },
+  presetButtonTextActive: {
+    color: '#fff',
+  },
+  timerSection: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 25,
+    borderRadius: 15,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  timerLabel: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 10,
+  },
+  timerDisplay: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 20,
+  },
+  controlButton: {
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    borderRadius: 25,
+    backgroundColor: '#4CAF50',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  controlButtonStop: {
+    backgroundColor: '#f44336',
+  },
+  controlButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    textAlign: 'center',
+  },
+});
+
+export default App;
