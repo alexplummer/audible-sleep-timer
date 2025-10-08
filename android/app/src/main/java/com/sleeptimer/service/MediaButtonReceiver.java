@@ -239,10 +239,10 @@ public class MediaButtonReceiver extends BroadcastReceiver {
     private static void resumeAudibleOnly(Context context) {
         Log.d(TAG, "Resuming Audible playback only - timer already running");
         
-        // Just resume Audible, timer is already running
-        startAudible(context);
+        // Just send a simple play command without heavy MediaSession manipulation
+        sendPlayCommandToAudible(context);
         
-        Log.d(TAG, "Audible resumed, timer continues running");
+        Log.d(TAG, "Sent resume command to Audible, timer continues running");
     }
     
     private static void resumeTimer(Context context) {
@@ -428,6 +428,40 @@ public class MediaButtonReceiver extends BroadcastReceiver {
             if (remaining < 0) remaining = 0;
             
             ForegroundService.updateNotification("Timer Running", remaining);
+        }
+    }
+    
+    public static void updateRunningTimerDuration(android.content.Context context) {
+        if (timerRunning && !timerPaused) {
+            Log.d(TAG, "Updating running timer with new duration");
+            
+            // Calculate how much time has already elapsed
+            long elapsed = System.currentTimeMillis() - timerStartTime;
+            
+            // Get the new timer duration
+            long newTimerDuration = TimerConfigModule.getTimerDurationSeconds() * 1000;
+            
+            // Cancel the current timer
+            if (timerHandler != null && timerRunnable != null) {
+                timerHandler.removeCallbacks(timerRunnable);
+            }
+            
+            // Update timer duration and restart time
+            timerDuration = newTimerDuration;
+            timerStartTime = System.currentTimeMillis(); // Reset start time to now
+            
+            // Restart the timer with the new duration
+            startTimer(context);
+            
+            Log.d(TAG, "Timer updated - new duration: " + (newTimerDuration / 1000) + " seconds");
+            
+            // Update the UI timer as well
+            try {
+                Class<?> clazz = Class.forName("com.sleeptimer.MediaButtonEventModule");
+                clazz.getMethod("sendTimerUpdatedEvent", long.class).invoke(null, newTimerDuration / 1000);
+            } catch (Exception e) {
+                Log.w(TAG, "Could not send timer updated event to React Native", e);
+            }
         }
     }
 }

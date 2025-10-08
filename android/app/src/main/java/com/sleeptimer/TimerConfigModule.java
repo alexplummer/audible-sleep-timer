@@ -21,9 +21,25 @@ public class TimerConfigModule extends ReactContextBaseJavaModule {
     public void setTimerDuration(int minutes, Promise promise) {
         try {
             timerDurationSeconds = minutes * 60;
+            
+            // If timer is currently running, update it with the new duration
+            updateRunningTimer();
+            
             promise.resolve("Timer duration set to " + minutes + " minutes");
         } catch (Exception e) {
             promise.reject("ERROR", "Failed to set timer duration", e);
+        }
+    }
+    
+    private void updateRunningTimer() {
+        try {
+            // Use reflection to call MediaButtonReceiver's updateRunningTimer method
+            Class<?> clazz = Class.forName("com.sleeptimer.service.MediaButtonReceiver");
+            clazz.getMethod("updateRunningTimerDuration", ReactApplicationContext.class)
+                 .invoke(null, getReactApplicationContext());
+        } catch (Exception e) {
+            // Log but don't fail - this just means timer update isn't available
+            android.util.Log.d("TimerConfigModule", "Could not update running timer: " + e.getMessage());
         }
     }
 

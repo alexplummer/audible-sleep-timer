@@ -137,4 +137,16 @@ public class MediaButtonEventModule extends ReactContextBaseJavaModule {
             android.util.Log.e("MediaButtonEventModule", "Cannot emit event: reactContext is null");
         }
     }
+
+    public static void sendTimerUpdatedEvent(long newDurationSeconds) {
+        android.util.Log.d("MediaButtonEventModule", "sendTimerUpdatedEvent called with duration: " + newDurationSeconds);
+        if (reactContext != null) {
+            reactContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                .emit("TimerUpdated", newDurationSeconds);
+            android.util.Log.d("MediaButtonEventModule", "TimerUpdated event emitted to JS");
+        } else {
+            android.util.Log.e("MediaButtonEventModule", "Cannot emit event: reactContext is null");
+        }
+    }
 }

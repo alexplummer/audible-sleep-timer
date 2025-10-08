@@ -144,6 +144,16 @@ const App = () => {
     return () => subscription.remove();
   }, []);
 
+  // Listen for native timer update events
+  useEffect(() => {
+    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
+    const subscription = mediaButtonEventEmitter.addListener('TimerUpdated', (newDurationSeconds: number) => {
+      console.log('Native timer updated with new duration:', newDurationSeconds);
+      setTimer(newDurationSeconds); // Update UI timer to new duration
+    });
+    return () => subscription.remove();
+  }, []);
+
   // Update native timer duration whenever timerMinutes changes
   useEffect(() => {
     if (NativeModules.TimerConfig) {
@@ -151,7 +161,17 @@ const App = () => {
         .then((message: string) => console.log(message))
         .catch((error: any) => console.error('Failed to set timer duration:', error));
     }
-  }, [timerMinutes]);
+    
+    // If timer is currently running, restart it with the new duration
+    if (running) {
+      console.log('Timer is running - restarting with new duration:', timerMinutes, 'minutes');
+      setTimer(timerMinutes * 60); // Update UI timer to new duration
+      // The native timer will be automatically updated via TimerConfigModule.setTimerDuration
+    } else if (!paused) {
+      // If timer is not running and not paused, update the display to show new duration
+      setTimer(timerMinutes * 60);
+    }
+  }, [timerMinutes, running, paused]);
 
   // Handle timer countdown
   useEffect(() => {
