@@ -464,4 +464,26 @@ public class MediaButtonReceiver extends BroadcastReceiver {
             }
         }
     }
+    
+    public static long getRemainingTimeSeconds() {
+        if (!timerRunning) {
+            return 0;
+        }
+        
+        if (timerPaused) {
+            return pausedTimeRemaining / 1000; // Convert to seconds
+        }
+        
+        long elapsed = System.currentTimeMillis() - timerStartTime;
+        long remaining = timerDuration - elapsed;
+        return Math.max(0, remaining / 1000); // Convert to seconds and ensure non-negative
+    }
+    
+    public static boolean isTimerRunning() {
+        return timerRunning;
+    }
+    
+    public static boolean isTimerPaused() {
+        return timerPaused;
+    }
 }

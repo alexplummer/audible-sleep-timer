@@ -78,6 +78,28 @@ public class MediaButtonEventModule extends ReactContextBaseJavaModule {
         }
     }
 
+    @ReactMethod
+    public void getRemainingTime(Promise promise) {
+        try {
+            long remainingSeconds = MediaButtonReceiver.getRemainingTimeSeconds();
+            boolean isRunning = MediaButtonReceiver.isTimerRunning();
+            boolean isPaused = MediaButtonReceiver.isTimerPaused();
+            
+            android.util.Log.d("MediaButtonEventModule", "getRemainingTime called - remaining: " + remainingSeconds + "s, running: " + isRunning + ", paused: " + isPaused);
+            
+            // Return an object with remaining time and timer state
+            com.facebook.react.bridge.WritableMap result = com.facebook.react.bridge.Arguments.createMap();
+            result.putDouble("remainingSeconds", remainingSeconds);
+            result.putBoolean("isRunning", isRunning);
+            result.putBoolean("isPaused", isPaused);
+            
+            promise.resolve(result);
+        } catch (Exception e) {
+            android.util.Log.e("MediaButtonEventModule", "Error getting remaining time", e);
+            promise.reject("GET_REMAINING_TIME_ERROR", "Failed to get remaining time: " + e.getMessage());
+        }
+    }
+
     public static void sendPlayButtonEvent() {
         android.util.Log.d("MediaButtonEventModule", "sendPlayButtonEvent called. reactContext is " + (reactContext == null ? "null" : "not null"));
         if (reactContext != null) {

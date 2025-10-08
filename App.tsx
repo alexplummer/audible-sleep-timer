@@ -176,9 +176,44 @@ const App = () => {
   // Handle timer countdown
   useEffect(() => {
     if (running && timer > 0) {
-      intervalRef.current = setInterval(() => {
-        setTimer(t => t > 0 ? t - 1 : 0);
-      }, 1000);
+      // Sync with native timer every second
+      const syncTimer = () => {
+        if (NativeModules.MediaButtonEvent) {
+          NativeModules.MediaButtonEvent.getRemainingTime()
+            .then((result: any) => {
+              const { remainingSeconds, isRunning, isPaused } = result;
+              console.log('Native timer sync - remaining:', remainingSeconds, 'running:', isRunning, 'paused:', isPaused);
+              
+              // Update UI to match native timer state
+              setTimer(Math.max(0, remainingSeconds));
+              
+              // Handle state mismatches
+              if (!isRunning && !isPaused && running) {
+                // Native timer stopped, but UI thinks it's running
+                console.log('Native timer stopped - stopping UI timer');
+                setRunning(false);
+                setPaused(false);
+              } else if (isPaused && running) {
+                // Native timer paused, but UI thinks it's running
+                console.log('Native timer paused - pausing UI timer');
+                setRunning(false);
+                setPaused(true);
+              }
+            })
+            .catch((error: any) => {
+              console.warn('Failed to sync with native timer:', error);
+              // Fall back to local countdown if native sync fails
+              setTimer(t => t > 0 ? t - 1 : 0);
+            });
+        } else {
+          // Fall back to local countdown if native module not available
+          setTimer(t => t > 0 ? t - 1 : 0);
+        }
+      };
+      
+      // Start syncing immediately, then every second
+      syncTimer();
+      intervalRef.current = setInterval(syncTimer, 1000);
     } else if (!running && intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
