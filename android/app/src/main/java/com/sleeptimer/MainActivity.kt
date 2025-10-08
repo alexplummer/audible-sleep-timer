@@ -19,6 +19,33 @@ class MainActivity : ReactActivity() {
    */
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+      
+  // Volume button double-press detection
+  private var lastVolumeDownTime = 0L
+  private val doublePressDuration = 500L // 500ms for double-press detection
+  
+  override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+    if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {
+      val currentTime = System.currentTimeMillis()
+      val timeSinceLastPress = currentTime - lastVolumeDownTime
+      
+      android.util.Log.d("MainActivity", "Volume down pressed, time since last press: ${timeSinceLastPress}ms")
+      
+      if (timeSinceLastPress <= doublePressDuration && lastVolumeDownTime > 0) {
+        // Double-press detected - go to previous chapter
+        android.util.Log.d("MainActivity", "Double-press detected - going to previous chapter in Audible")
+        com.sleeptimer.service.MediaButtonReceiver.triggerPreviousChapter(this)
+        lastVolumeDownTime = 0 // Reset to prevent triple-press detection
+        return true // Consume the event to prevent volume change
+      } else {
+        // Single press - record time and allow normal volume behavior
+        android.util.Log.d("MainActivity", "Single volume down press - waiting for potential double-press")
+        lastVolumeDownTime = currentTime
+        return super.onKeyDown(keyCode, event) // Allow normal volume behavior
+      }
+    }
+    return super.onKeyDown(keyCode, event)
+  }
   override fun onResume() {
     super.onResume()
     android.util.Log.d("MainActivity", "onResume called")

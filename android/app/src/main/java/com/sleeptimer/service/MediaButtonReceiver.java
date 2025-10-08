@@ -24,6 +24,10 @@ public class MediaButtonReceiver extends BroadcastReceiver {
     private static long pausedTimeRemaining;
     private static android.os.Handler notificationUpdateHandler;
     private static Runnable notificationUpdateRunnable;
+    
+    // Volume button double-press detection
+    private static long lastVolumeDownTime = 0;
+    private static final long DOUBLE_PRESS_INTERVAL = 500; // 500ms for double-press detection
 
     public MediaButtonReceiver() {
         Log.d(TAG, "MediaButtonReceiver constructor called");
@@ -48,6 +52,9 @@ public class MediaButtonReceiver extends BroadcastReceiver {
                           keyCode == android.view.KeyEvent.KEYCODE_MEDIA_STOP) {
                     Log.d(TAG, "Pause/Stop button pressed (keycode: " + keyCode + ")");
                     handlePauseButton(context);
+                } else if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {
+                    Log.d(TAG, "Volume down button pressed");
+                    handleVolumeDownButton(context);
                 }
             }
         }
@@ -101,6 +108,10 @@ public class MediaButtonReceiver extends BroadcastReceiver {
                                           keyEvent.getKeyCode() == android.view.KeyEvent.KEYCODE_MEDIA_STOP) {
                                     Log.d(TAG, "MediaSession handling pause button");
                                     handlePauseButton(context);
+                                    return true;
+                                } else if (keyEvent.getKeyCode() == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {
+                                    Log.d(TAG, "MediaSession handling volume down button");
+                                    handleVolumeDownButton(context);
                                     return true;
                                 }
                             }
@@ -160,6 +171,24 @@ public class MediaButtonReceiver extends BroadcastReceiver {
             pauseAudibleOnly(context);
         } else {
             Log.d(TAG, "Timer not running, ignoring pause button");
+        }
+    }
+    
+    private static void handleVolumeDownButton(Context context) {
+        long currentTime = System.currentTimeMillis();
+        long timeSinceLastPress = currentTime - lastVolumeDownTime;
+        
+        Log.d(TAG, "Volume down pressed, time since last press: " + timeSinceLastPress + "ms");
+        
+        if (timeSinceLastPress <= DOUBLE_PRESS_INTERVAL && lastVolumeDownTime > 0) {
+            // Double-press detected - go to previous chapter
+            Log.d(TAG, "Double-press detected - going to previous chapter in Audible");
+            goToPreviousChapter(context);
+            lastVolumeDownTime = 0; // Reset to prevent triple-press detection
+        } else {
+            // Single press - just record the time
+            Log.d(TAG, "Single volume down press - waiting for potential double-press");
+            lastVolumeDownTime = currentTime;
         }
     }
     
@@ -394,9 +423,43 @@ public class MediaButtonReceiver extends BroadcastReceiver {
         }
     }
     
+    private static void goToPreviousChapter(Context context) {
+        Log.d(TAG, "Attempting to go to previous chapter in Audible");
+        
+        try {
+            Intent prevIntent = new Intent("android.intent.action.MEDIA_BUTTON");
+            prevIntent.setPackage("com.audible.application");
+            
+            long eventTime = System.currentTimeMillis();
+            
+            // Send MEDIA_PREVIOUS key event to go to previous chapter
+            android.view.KeyEvent prevEvent = new android.view.KeyEvent(
+                eventTime, eventTime, android.view.KeyEvent.ACTION_DOWN, 
+                android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0);
+            prevIntent.putExtra(Intent.EXTRA_KEY_EVENT, prevEvent);
+            context.sendBroadcast(prevIntent);
+            
+            android.view.KeyEvent prevUpEvent = new android.view.KeyEvent(
+                eventTime, eventTime, android.view.KeyEvent.ACTION_UP, 
+                android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0);
+            prevIntent.putExtra(Intent.EXTRA_KEY_EVENT, prevUpEvent);
+            context.sendBroadcast(prevIntent);
+            
+            Log.d(TAG, "Sent previous chapter command to Audible");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error sending previous chapter command", e);
+        }
+    }
+    
     public static void triggerStartAudible(Context context) {
         Log.d(TAG, "triggerStartAudible called from React Native module");
         startAudible(context);
+    }
+    
+    public static void triggerPreviousChapter(Context context) {
+        Log.d(TAG, "triggerPreviousChapter called from MainActivity");
+        goToPreviousChapter(context);
     }
     
     private static void startNotificationUpdates(Context context) {
