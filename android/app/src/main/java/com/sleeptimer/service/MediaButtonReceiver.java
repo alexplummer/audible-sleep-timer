@@ -146,8 +146,8 @@ public class MediaButtonReceiver extends BroadcastReceiver {
             Log.d(TAG, "Play button pressed - resuming paused timer");
             resumeTimer(context);
         } else if (timerRunning) {
-            Log.d(TAG, "Timer already running, ignoring button press");
-            return;
+            Log.d(TAG, "Timer already running - resuming Audible playback only");
+            resumeAudibleOnly(context);
         } else {
             Log.d(TAG, "Play button pressed - starting new timer");
             startNewTimer(context);
@@ -156,10 +156,10 @@ public class MediaButtonReceiver extends BroadcastReceiver {
     
     private static void handlePauseButton(Context context) {
         if (timerRunning && !timerPaused) {
-            Log.d(TAG, "Pause button pressed - pausing timer");
-            pauseTimer(context);
+            Log.d(TAG, "Pause button pressed - pausing Audible only (timer continues)");
+            pauseAudibleOnly(context);
         } else {
-            Log.d(TAG, "Timer not running or already paused, ignoring pause button");
+            Log.d(TAG, "Timer not running, ignoring pause button");
         }
     }
     
@@ -199,6 +199,17 @@ public class MediaButtonReceiver extends BroadcastReceiver {
         Log.d(TAG, "Timer started with delay: " + delay + "ms");
     }
     
+    private static void pauseAudibleOnly(Context context) {
+        Log.d(TAG, "Pausing Audible playbook only - timer continues running");
+        
+        // Just pause Audible, don't touch the timer
+        pauseAudible(context);
+        
+        // No timer state changes - timer keeps running
+        // No notification of pause to React Native - timer state unchanged
+        Log.d(TAG, "Audible paused, timer continues running");
+    }
+    
     private static void pauseTimer(Context context) {
         if (timerHandler != null && timerRunnable != null) {
             timerHandler.removeCallbacks(timerRunnable);
@@ -223,6 +234,15 @@ public class MediaButtonReceiver extends BroadcastReceiver {
             stopNotificationUpdates();
             ForegroundService.updateNotification("Timer Paused", pausedTimeRemaining);
         }
+    }
+    
+    private static void resumeAudibleOnly(Context context) {
+        Log.d(TAG, "Resuming Audible playback only - timer already running");
+        
+        // Just resume Audible, timer is already running
+        startAudible(context);
+        
+        Log.d(TAG, "Audible resumed, timer continues running");
     }
     
     private static void resumeTimer(Context context) {
