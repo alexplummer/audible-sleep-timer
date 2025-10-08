@@ -105,11 +105,32 @@ public class ForegroundService extends Service {
                     .setAutoCancel(false)
                     .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Close App", closePendingIntent);
 
+            // Add preset timer buttons
+            int[] presetMinutes = {15, 45};
+            for (int i = 0; i < presetMinutes.length; i++) {
+                int minutes = presetMinutes[i];
+                android.content.Intent presetIntent = new android.content.Intent(this, PresetTimerReceiver.class);
+                presetIntent.setAction(PresetTimerReceiver.ACTION_SET_TIMER);
+                presetIntent.putExtra(PresetTimerReceiver.EXTRA_MINUTES, minutes);
+                
+                android.app.PendingIntent presetPendingIntent = android.app.PendingIntent.getBroadcast(
+                    this, 100 + i, presetIntent, android.app.PendingIntent.FLAG_IMMUTABLE
+                );
+                
+                builder.addAction(android.R.drawable.ic_menu_recent_history, minutes + "m", presetPendingIntent);
+            }
+
             android.content.Intent notificationIntent = new android.content.Intent(this, com.sleeptimer.MainActivity.class);
             android.app.PendingIntent pendingIntent = android.app.PendingIntent.getActivity(
                 this, 0, notificationIntent, android.app.PendingIntent.FLAG_IMMUTABLE
             );
             builder.setContentIntent(pendingIntent);
+            
+            // Set custom big text style to show "Reset Timer:" header
+            NotificationCompat.BigTextStyle bigTextStyle = new NotificationCompat.BigTextStyle()
+                .setBigContentTitle("Sleep Timer")
+                .bigText(contentText + "\n\nReset Timer: Use buttons below to change duration");
+            builder.setStyle(bigTextStyle);
             
             android.app.Notification notification = builder.build();
             

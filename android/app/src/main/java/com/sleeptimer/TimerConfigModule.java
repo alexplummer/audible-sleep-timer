@@ -57,4 +57,30 @@ public class TimerConfigModule extends ReactContextBaseJavaModule {
     public static int getTimerDurationSeconds() {
         return timerDurationSeconds;
     }
+    
+    // Static method for notification preset buttons
+    public static void setTimerDurationFromNotification(int minutes) {
+        try {
+            timerDurationSeconds = minutes * 60;
+            android.util.Log.d("TimerConfigModule", "Timer duration set to " + minutes + " minutes from notification");
+            
+            // Update running timer if active
+            updateRunningTimerStatic();
+        } catch (Exception e) {
+            android.util.Log.e("TimerConfigModule", "Failed to set timer duration from notification", e);
+        }
+    }
+    
+    private static void updateRunningTimerStatic() {
+        try {
+            // Use reflection to call MediaButtonReceiver's updateRunningTimer method
+            Class<?> clazz = Class.forName("com.sleeptimer.service.MediaButtonReceiver");
+            // We need to pass a context, but we don't have access to it here
+            // The MediaButtonReceiver should handle null context gracefully
+            clazz.getMethod("updateRunningTimerDuration", android.content.Context.class)
+                 .invoke(null, (android.content.Context) null);
+        } catch (Exception e) {
+            android.util.Log.d("TimerConfigModule", "Could not update running timer from static method: " + e.getMessage());
+        }
+    }
 }

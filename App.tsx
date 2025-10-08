@@ -154,6 +154,18 @@ const App = () => {
     return () => subscription.remove();
   }, []);
 
+  // Listen for notification preset selection events
+  useEffect(() => {
+    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
+    const subscription = mediaButtonEventEmitter.addListener('TimerPresetSelected', (minutes: number) => {
+      console.log('Timer preset selected from notification:', minutes);
+      setTimerMinutes(minutes);
+      setInputValue(minutes.toString());
+      // The timer display will be updated by the timerMinutes useEffect
+    });
+    return () => subscription.remove();
+  }, []);
+
   // Update native timer duration whenever timerMinutes changes
   useEffect(() => {
     if (NativeModules.TimerConfig) {

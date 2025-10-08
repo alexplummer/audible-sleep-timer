@@ -73,5 +73,13 @@
           <action android:name="com.sleeptimer.CLOSE_APP" />
         </intent-filter>
       </receiver>
+      <receiver 
+        android:name="com.sleeptimer.service.PresetTimerReceiver" 
+        android:exported="false"
+        android:enabled="true">
+        <intent-filter>
+          <action android:name="com.sleeptimer.SET_TIMER" />
+        </intent-filter>
+      </receiver>
     </application>
 </manifest>
