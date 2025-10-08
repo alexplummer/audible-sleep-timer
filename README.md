@@ -10,6 +10,7 @@ This is a [**React Native**](https://reactnative.dev) project, bootstrapped usin
 
 ## ✨ Features
 
+### 🎛️ Core Functionality
 - **🎛️ Hardware Button Control**: Start, pause, and resume the timer using your earbuds' play/pause button  
 - **⏰ Real-time Countdown**: Remaining time shown directly in your notification panel  
 - **⏸️ Smart Pause/Resume**: Timer automatically pauses/resumes along with playback  
@@ -17,15 +18,31 @@ This is a [**React Native**](https://reactnative.dev) project, bootstrapped usin
 - **📱 Persistent Notification**: Always shows current timer status and remaining time  
 - **🎯 One-Touch Close**: Close the app entirely from the notification  
 
+### 🆕 Advanced Features
+- **⚡ Quick Timer Presets**: Set timer instantly with notification buttons (15, 45 min)  
+- **🌙 Dark Theme**: Beautiful dark interface optimized for bedtime use  
+- **⏮️ Chapter Navigation**: Double-press volume down to go back a chapter (when app is open)   
+
 ---
 
 ## 🚀 How it Works
 
-1. **Set your timer** – Choose how long you want to listen (15 min to 2 hrs)  
+### 🎯 Basic Usage
+1. **Set your timer** – Choose duration with slider, presets (15-60 min), or text input  
 2. **Start the timer** – Press the play button on your earbuds to start both Audible and the timer  
 3. **Sleep peacefully** – The timer counts down in real-time, visible in your notification  
 4. **Automatic shutoff** – Audible pauses when the timer expires  
 5. **Full control** – Pause/resume anytime using your earbuds  
+
+### ⚡ Quick Controls
+- **Notification Presets**: Tap 15m or 45m buttons directly from notification  
+- **Auto-Restart**: Change timer duration while running - it automatically restarts with new time  
+- **Volume Navigation**: Double-press volume down to go back a chapter (when app is open)  
+
+### 🎛️ Hardware Button Functions
+- **Single Play/Pause**: Start timer + Audible, or pause/resume playback  
+- **Volume Down Double-Press**: Previous chapter (500ms window)  
+- **Volume Single Press**: Normal volume control  
 
 ---
 
@@ -76,4 +93,3 @@ npm run android
 
 # Build production APK
 npm run build
-
