@@ -1,4 +1,6 @@
-<img width="280" alt="Screenshot_20250923-211050" src="https://github.com/user-attachments/assets/4d18d823-c933-48cf-859f-56beddb7adb8" />
+
+<img width="280" src="https://github.com/user-attachments/assets/57f3e4c5-6dcc-4288-a0e9-d45732df3dba" />
+
 
 # 🎧 Audible Sleep Timer
 
