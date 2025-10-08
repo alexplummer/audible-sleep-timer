@@ -223,7 +223,7 @@ const App = () => {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
+        <StatusBar barStyle="light-content" backgroundColor="#121212" />
         
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Header */}
@@ -334,7 +334,7 @@ const App = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#121212',
   },
   scrollContent: {
     flexGrow: 1,
@@ -347,23 +347,23 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#ffffff',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: '#b0b0b0',
     textAlign: 'center',
   },
   controlsContainer: {
     marginBottom: 40,
-    backgroundColor: 'white',
+    backgroundColor: '#1e1e1e',
     borderRadius: 12,
     padding: 20,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
   },
   inputContainer: {
@@ -372,18 +372,19 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 16,
-    color: '#333',
+    color: '#ffffff',
     marginBottom: 10,
     fontWeight: '500',
   },
   input: {
     borderWidth: 2,
-    borderColor: '#ddd',
+    borderColor: '#404040',
     borderRadius: 8,
     padding: 15,
     fontSize: 18,
     textAlign: 'center',
-    backgroundColor: 'white',
+    backgroundColor: '#2a2a2a',
+    color: '#ffffff',
     width: 120,
     fontWeight: 'bold',
   },
@@ -392,20 +393,20 @@ const styles = StyleSheet.create({
   },
   sliderTrack: {
     height: 8,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: '#404040',
     borderRadius: 4,
     position: 'relative',
     marginVertical: 20,
   },
   sliderProgress: {
     height: '100%',
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#bb86fc',
     borderRadius: 4,
   },
   sliderThumb: {
     width: 20,
     height: 20,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#bb86fc',
     borderRadius: 10,
     position: 'absolute',
     top: -6,
@@ -413,7 +414,7 @@ const styles = StyleSheet.create({
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
   },
   sliderLabels: {
@@ -423,7 +424,7 @@ const styles = StyleSheet.create({
   },
   sliderLabel: {
     fontSize: 12,
-    color: '#666',
+    color: '#b0b0b0',
   },
   presetsContainer: {
     marginBottom: 30,
@@ -431,7 +432,7 @@ const styles = StyleSheet.create({
   presetsTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: '#ffffff',
     marginBottom: 15,
     textAlign: 'center',
   },
@@ -441,9 +442,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   presetButton: {
-    backgroundColor: 'white',
+    backgroundColor: '#2a2a2a',
     borderWidth: 2,
-    borderColor: '#ddd',
+    borderColor: '#404040',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 12,
@@ -453,20 +454,20 @@ const styles = StyleSheet.create({
     elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.3,
     shadowRadius: 2,
   },
   presetButtonActive: {
-    borderColor: '#4CAF50',
-    backgroundColor: '#f1f8e9',
+    borderColor: '#bb86fc',
+    backgroundColor: '#3e2f5b',
   },
   presetButtonText: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#333',
+    color: '#ffffff',
   },
   presetButtonTextActive: {
-    color: '#4CAF50',
+    color: '#bb86fc',
     fontWeight: 'bold',
   },
   timerSection: {
@@ -476,13 +477,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'white',
+    backgroundColor: '#1e1e1e',
     borderRadius: 12,
     padding: 20,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
   },
   timerDisplay: {
@@ -492,53 +493,53 @@ const styles = StyleSheet.create({
   timerText: {
     fontSize: 48,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#ffffff',
     fontFamily: 'monospace',
   },
   timerStatus: {
     fontSize: 16,
-    color: '#666',
+    color: '#b0b0b0',
     marginTop: 8,
   },
   startButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#bb86fc',
     paddingHorizontal: 25,
     paddingVertical: 15,
     borderRadius: 25,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
     marginLeft: 20,
   },
   stopButton: {
-    backgroundColor: '#f44336',
+    backgroundColor: '#cf6679',
   },
   startButtonText: {
-    color: 'white',
+    color: '#000000',
     fontSize: 18,
     fontWeight: 'bold',
   },
   infoContainer: {
-    backgroundColor: 'white',
+    backgroundColor: '#1e1e1e',
     padding: 20,
     borderRadius: 12,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
   },
   infoTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: '#ffffff',
     marginBottom: 10,
   },
   infoText: {
     fontSize: 14,
-    color: '#666',
+    color: '#b0b0b0',
     lineHeight: 20,
   },
 });
