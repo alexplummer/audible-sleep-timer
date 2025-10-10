@@ -153,14 +153,17 @@ public class MediaButtonReceiver extends BroadcastReceiver {
     }
     
     private static void handlePlayButton(Context context) {
+        Log.d(TAG, "Play button pressed - timerRunning: " + timerRunning + ", timerPaused: " + timerPaused);
+        
         if (timerPaused) {
-            Log.d(TAG, "Play button pressed - resuming paused timer");
+            Log.d(TAG, "Resuming paused timer and opening Audible");
             resumeTimer(context);
         } else if (timerRunning) {
-            Log.d(TAG, "Timer already running - resuming Audible playback only");
-            resumeAudibleOnly(context);
+            Log.d(TAG, "Timer already running - ensuring Audible is opened and playing");
+            // Always ensure Audible is opened, even if timer is running
+            startAudible(context);
         } else {
-            Log.d(TAG, "Play button pressed - starting new timer");
+            Log.d(TAG, "Starting new timer and opening Audible");
             startNewTimer(context);
         }
     }
@@ -193,10 +196,17 @@ public class MediaButtonReceiver extends BroadcastReceiver {
     }
     
     private static void startNewTimer(Context context) {
+        Log.d(TAG, "Starting new timer - ensuring Audible opens");
         timerRunning = true;
         timerPaused = false;
         timerDuration = TimerConfigModule.getTimerDurationSeconds() * 1000;
         timerStartTime = System.currentTimeMillis();
+        
+        // Ensure MediaSession is active before starting Audible
+        if (mediaSession != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            mediaSession.setActive(true);
+            Log.d(TAG, "Ensured MediaSession is active for new timer");
+        }
         
         // Start Audible by sending a play command
         startAudible(context);
@@ -328,16 +338,16 @@ public class MediaButtonReceiver extends BroadcastReceiver {
     }
     
     private static void startAudible(Context context) {
-        Log.d(TAG, "Attempting to start Audible playbook");
+        Log.d(TAG, "Attempting to start Audible playbook - ensuring app opens");
         
         try {
             Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage("com.audible.application");
             if (launchIntent != null) {
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                 context.startActivity(launchIntent);
-                Log.d(TAG, "Launched Audible app directly");
+                Log.d(TAG, "Successfully launched Audible app");
                 
-                // Send play command after a short delay
+                // Send play command after a short delay to ensure app is ready
                 new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                     if (mediaSession != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         mediaSession.setActive(false);
@@ -355,9 +365,20 @@ public class MediaButtonReceiver extends BroadcastReceiver {
                         }, 1000);
                     }, 200);
                 }, 1500);
+            } else {
+                Log.e(TAG, "Audible app not found - cannot launch");
+                // Still try to send play command in case app is installed but launch intent failed
+                sendPlayCommandToAudible(context);
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error in startAudible", e);
+            Log.e(TAG, "Error launching Audible app", e);
+            // Fallback: try to send play command anyway
+            try {
+                sendPlayCommandToAudible(context);
+                Log.d(TAG, "Sent fallback play command to Audible");
+            } catch (Exception fallbackError) {
+                Log.e(TAG, "Fallback play command also failed", fallbackError);
+            }
         }
     }
     
