@@ -107,6 +107,10 @@ npm run build
 
 The standalone APK is written to `android/app/build/outputs/apk/release/app-release.apk`; it includes the JavaScript bundle and does not need Metro. Releases currently retain the repository's existing debug signing certificate for compatibility with earlier sideloaded versions. This is not a private production signing key and must not be used for app-store distribution.
 
+### Publishing a Release
+
+Update the package version, lockfile, and Android `versionName`, and increase Android `versionCode` before creating an annotated `vX.Y.Z` tag. Push the commit and tag to this repository. The **Android release** GitHub Actions workflow validates and builds the tagged source, then publishes a standalone APK and `SHA256SUMS.txt` using GitHub's built-in workflow token. No personal access token is needed; an SSH key with repository write access is sufficient to push the tag. The tag must match `package.json`.
+
 ### Validation
 
 ```bash
