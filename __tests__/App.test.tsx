@@ -78,8 +78,8 @@ const press = async (
 const text = (renderer: ReactTestRenderer.ReactTestRenderer, id: string) =>
   renderer.root.findByProps({ testID: id }).props.children;
 
-afterEach(() => {
-  ReactTestRenderer.act(() => {
+afterEach(async () => {
+  await ReactTestRenderer.act(async () => {
     renderers.splice(0).forEach(renderer => renderer.unmount());
   });
   delete NativeModules.SleepTimer;
@@ -161,7 +161,9 @@ test('resumes a paused timer and cancels it without starting playback', async ()
 });
 
 test('counts down native remaining time and stops through the main button', async () => {
-  jest.useFakeTimers();
+  jest.useFakeTimers({
+    doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'],
+  });
   const module = mockModule();
   module.getState = resolved({ state: 'running', remainingMs: 61_000 });
   const renderer = await render();
