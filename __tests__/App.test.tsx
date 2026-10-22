@@ -30,6 +30,9 @@ const baseState: NativeTimerState = {
   gainSupported: true,
   gainApplied: false,
   gainOverridden: false,
+  gainLegacyMode: false,
+  gainDetectionGranted: false,
+  gainSessionCount: 0,
   gainError: null,
 };
 
@@ -47,6 +50,9 @@ function mockModule() {
     resume: resolved({ state: 'running' }),
     setGain: jest.fn((db: number) =>
       Promise.resolve({ ...baseState, gainDb: db }),
+    ),
+    setGainLegacyMode: jest.fn((enabled: boolean) =>
+      Promise.resolve({ ...baseState, gainLegacyMode: enabled }),
     ),
     openNotificationAccessSettings: jest.fn(() => Promise.resolve()),
     close: jest.fn(() => Promise.resolve()),
@@ -217,4 +223,79 @@ test('formatting helpers', () => {
   expect(gainPercent(0)).toBe('100');
   expect(gainPercent(-20)).toBe('10');
   expect(gainPercent(-40)).toBe('1.0');
+});
+
+test('does not present an unattached gain slider as working attenuation', async () => {
+  const module = mockModule();
+  module.getState = resolved({ gainDb: -20 });
+  const renderer = await render();
+  expect(text(renderer, 'gain-status')).toContain(
+    'Waiting for an Audible audio session',
+  );
+  expect(text(renderer, 'gain-status')).not.toContain('10%');
+  expect(
+    renderer.root.findAllByProps({ testID: 'gain-detection-help' }).length,
+  ).toBeGreaterThan(0);
+});
+
+test('shows verified session configuration separately from legacy mix', async () => {
+  const module = mockModule();
+  module.getState = resolved({
+    gainDb: -20,
+    gainApplied: true,
+    gainDetectionGranted: true,
+    gainSessionCount: 1,
+  });
+  module.setGainLegacyMode.mockImplementation((enabled: boolean) =>
+    Promise.resolve({
+      ...baseState,
+      gainDb: -20,
+      gainApplied: true,
+      gainLegacyMode: enabled,
+      gainSessionCount: enabled ? 0 : 1,
+    }),
+  );
+  const renderer = await render();
+  expect(text(renderer, 'gain-status')).toContain('target 10%');
+  expect(
+    renderer.root.findAllByProps({ testID: 'gain-detection-help' }),
+  ).toHaveLength(0);
+
+  await press(renderer, 'gain-legacy-mode');
+  expect(module.setGainLegacyMode).toHaveBeenCalledWith(true);
+  expect(text(renderer, 'gain-status')).toContain('Some phones bypass it');
+  await press(renderer, 'gain-session-mode');
+  expect(module.setGainLegacyMode).toHaveBeenLastCalledWith(false);
+  await press(renderer, 'gain-retry');
+  expect(module.getState).toHaveBeenCalledTimes(2);
+});
+
+test('does not claim attenuation when the detected session has no enabled effect', async () => {
+  const module = mockModule();
+  module.getState = resolved({ gainDb: -20, gainSessionCount: 1 });
+  const renderer = await render();
+  expect(text(renderer, 'gain-status')).toContain('Attenuation is not active');
+  expect(text(renderer, 'gain-status')).not.toContain('10%');
+
+  await ReactTestRenderer.act(async () => {
+    DeviceEventEmitter.emit(STATE_EVENT, {
+      ...baseState,
+      gainDb: -20,
+      gainSessionCount: 1,
+      gainError:
+        'Android could not configure attenuation for this audio session.',
+    });
+  });
+  expect(text(renderer, 'gain-status')).toContain(
+    'Android could not configure attenuation',
+  );
+  expect(text(renderer, 'gain-status')).not.toContain('10%');
+});
+
+test('warns when another equalizer owns the effect', async () => {
+  const module = mockModule();
+  module.getState = resolved({ gainDb: -20, gainOverridden: true });
+  const renderer = await render();
+  expect(text(renderer, 'gain-status')).toContain('Another app');
+  expect(text(renderer, 'gain-status')).not.toContain('10%');
 });

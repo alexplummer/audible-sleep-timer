@@ -68,7 +68,7 @@ public class SleepTimerModule extends ReactContextBaseJavaModule implements Slee
 
     @ReactMethod
     public void getState(Promise promise) {
-        run(promise, () -> { });
+        run(promise, () -> GainController.get(ctx()).refresh());
     }
 
     @ReactMethod
@@ -94,6 +94,11 @@ public class SleepTimerModule extends ReactContextBaseJavaModule implements Slee
     @ReactMethod
     public void setGain(double db, Promise promise) {
         run(promise, () -> GainController.get(ctx()).setGainDb((float) db));
+    }
+
+    @ReactMethod
+    public void setGainLegacyMode(boolean enabled, Promise promise) {
+        run(promise, () -> GainController.get(ctx()).setLegacyMode(enabled));
     }
 
     @ReactMethod
@@ -173,6 +178,9 @@ public class SleepTimerModule extends ReactContextBaseJavaModule implements Slee
         map.putBoolean("gainSupported", GainController.isSupported());
         map.putBoolean("gainApplied", gain.isApplied());
         map.putBoolean("gainOverridden", gain.isOverridden());
+        map.putBoolean("gainLegacyMode", gain.isLegacyMode());
+        map.putBoolean("gainDetectionGranted", gain.hasDetectionPermission());
+        map.putInt("gainSessionCount", gain.getSessionCount());
         map.putString("gainError", gain.getError());
         return map;
     }

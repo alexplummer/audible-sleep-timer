@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.sleeptimer">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools" package="com.sleeptimer">
 
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -6,6 +7,8 @@
   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <!-- Optional, user-granted via ADB for players that don't broadcast audio-session IDs. -->
+  <uses-permission android:name="android.permission.DUMP" tools:ignore="ProtectedPermissions" />
   <!-- Exact timer expiry even in Doze (USE_EXACT_ALARM is granted to timer apps on Android 13+). -->
   <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
   <uses-permission android:name="android.permission.USE_EXACT_ALARM" />

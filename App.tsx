@@ -38,6 +38,9 @@ export interface NativeTimerState {
   gainSupported: boolean;
   gainApplied: boolean;
   gainOverridden: boolean;
+  gainLegacyMode: boolean;
+  gainDetectionGranted: boolean;
+  gainSessionCount: number;
   gainError: string | null;
 }
 
@@ -48,6 +51,7 @@ interface SleepTimerModule {
   stop(): Promise<NativeTimerState>;
   resume(): Promise<NativeTimerState>;
   setGain(db: number): Promise<NativeTimerState>;
+  setGainLegacyMode(enabled: boolean): Promise<NativeTimerState>;
   openNotificationAccessSettings(): Promise<void>;
   close(): Promise<void>;
 }
@@ -71,6 +75,9 @@ const DEFAULT_STATE: NativeTimerState = {
   gainSupported: true,
   gainApplied: false,
   gainOverridden: false,
+  gainLegacyMode: false,
+  gainDetectionGranted: false,
+  gainSessionCount: 0,
   gainError: null,
 };
 
@@ -270,6 +277,13 @@ const App = () => {
     nativeTimer()?.close().catch(logError('close'));
   };
 
+  const handleGainMode = (legacy: boolean) => {
+    nativeTimer()
+      ?.setGainLegacyMode(legacy)
+      .then(applyState)
+      .catch(logError('setGainLegacyMode'));
+  };
+
   const statusText =
     native.state === 'running'
       ? 'Running'
@@ -287,7 +301,15 @@ const App = () => {
     ? 'Another app (e.g. Precise Volume) is controlling the audio effect. Turn it off to use this slider.'
     : gainDb >= 0
     ? 'Off – audio plays at the normal system volume.'
-    : `${gainPercent(gainDb)}% of the current system volume.`;
+    : !native.gainApplied
+    ? native.gainSessionCount > 0
+      ? 'Attenuation is not active on the detected session. Pause and resume Audible, then retry.'
+      : 'Waiting for an Audible audio session. Pause and resume Audible, or enable better audio detection below.'
+    : native.gainLegacyMode
+    ? 'Legacy output-mix effect configured. Some phones bypass it; use Audible sessions if the sound does not change.'
+    : `Audible session effect configured: target ${gainPercent(
+        gainDb,
+      )}% of the current system volume.`;
 
   return (
     <SafeAreaProvider>
@@ -472,11 +494,59 @@ const App = () => {
                 <Text style={styles.nudgeButtonText}>+</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.infoText}>{gainNote}</Text>
-            <Text style={styles.infoTextSmall}>
-              Lowers the sound below the quietest system volume step without
-              changing Android's volume levels. Removed when the app is closed.
+            <View style={styles.presetsGrid}>
+              <TouchableOpacity
+                testID="gain-session-mode"
+                style={[
+                  styles.presetButton,
+                  !native.gainLegacyMode && styles.presetButtonActive,
+                ]}
+                onPress={() => handleGainMode(false)}
+              >
+                <Text style={styles.presetButtonText}>Audible sessions</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="gain-legacy-mode"
+                style={[
+                  styles.presetButton,
+                  native.gainLegacyMode && styles.presetButtonActive,
+                ]}
+                onPress={() => handleGainMode(true)}
+              >
+                <Text style={styles.presetButtonText}>Legacy mix</Text>
+              </TouchableOpacity>
+            </View>
+            <Text testID="gain-status" style={styles.infoText}>
+              {gainNote}
             </Text>
+            <Text style={styles.infoTextSmall}>
+              Targets gain below the quietest system volume step without
+              changing Android's volume levels. Device support is required. Turn
+              off other equalizers such as Precise Volume. Legacy mix can affect
+              all audio. Removed when the app is closed.
+            </Text>
+            {!native.gainLegacyMode && !native.gainDetectionGranted && (
+              <View testID="gain-detection-help">
+                <Text style={styles.infoText}>
+                  If Audible does not expose its audio session, enable better
+                  audio detection on Android 10+ using ADB from a trusted
+                  computer. This optional diagnostic permission cannot be
+                  granted by the app.
+                </Text>
+                <Text selectable style={styles.infoTextSmall}>
+                  adb shell pm grant com.sleeptimer android.permission.DUMP
+                </Text>
+              </View>
+            )}
+            <TouchableOpacity
+              testID="gain-retry"
+              style={styles.secondaryButton}
+              onPress={refresh}
+            >
+              <Text style={styles.secondaryButtonText}>
+                Retry audio detection
+              </Text>
+            </TouchableOpacity>
             {gainDb < 0 && (
               <TouchableOpacity
                 testID="gain-reset"

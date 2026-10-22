@@ -45,9 +45,33 @@ On first launch, allow notifications and grant **notification access** using the
 - **Auto-Restart**: Change timer duration while running - it automatically restarts with new time  
 - **Volume Navigation**: Double-press volume down to go back a chapter (when app is open)  
 - **Playback pauses**: Resuming within five minutes continues the remaining timer; resuming later starts a full timer.
-- **Fine-tune**: Keep Android's media volume above mute, then lower the in-app gain slider. **0 dB** disables attenuation; **-20 dB** is 10% and **-40 dB** is 1% of the current level. This is an output-mix effect, so it can also affect other audio while the app is running. Device audio effects and other volume apps can prevent it from applying; the app reports these limitations. Turn off conflicting effects such as Precise Volume before using it.
+- **Fine-tune**: Keep Android's media volume above mute, then lower the in-app gain slider. **0 dB** disables attenuation; **-20 dB** targets 10% and **-40 dB** targets 1% of the current signal amplitude (not perceived loudness). The default **Audible sessions** mode attaches Android's DynamicsProcessing input gain to Audible's audio-session IDs. Turn off conflicting equalizers such as Precise Volume first.
 
 The app no longer plays a silent audio loop, creates a competing media session, or requests audio focus. Audible and Android handle headphone buttons directly; the timer follows Audible's playback state. The countdown runs natively, including while the screen is off.
+
+### Fine-tune compatibility and session detection
+
+Version 2.1.0 only attached gain to Android's global output mix (session 0). Android deprecates this attachment, and some phones accept the configuration but bypass it during playback. The slider also displayed a percentage without checking that an effect was active. Version 2.1.1 defaults to Audible's own audio sessions, verifies effect control, enablement and per-channel gain readback, and reports waiting/error states instead of implying that the slider always works. Configuration checks cannot measure actual sound output.
+
+- **Audible sessions** listens for Android's standard audio-effect session open/close broadcasts. Open the timer app, then pause and resume Audible. A media-session token used for headphone controls is not an audio-session ID.
+- **Legacy mix** is an explicit, persisted fallback. It targets session 0 and may affect all audio, or do nothing on an unsupported device. It is not a guaranteed fix.
+- If Audible does not broadcast an audio-session ID, **better audio detection** is optional on Android 10+. Connect a trusted computer with Android platform-tools, enable USB debugging and authorize that computer, then run:
+
+  ```sh
+  adb shell pm grant com.sleeptimer android.permission.DUMP
+  ```
+
+  Select **Audible sessions**, play Audible, and tap **Retry audio detection**. Notification access is still needed for the timer's playback tracking. DUMP is a broad diagnostic permission, not a normal in-app permission prompt: the app reads audio-policy diagnostics locally, keeps only Audible's output-session IDs and does not save or log the raw dump. To remove this permission:
+
+  ```sh
+  adb shell pm revoke com.sleeptimer android.permission.DUMP
+  ```
+
+  Turn USB debugging off when finished. Android 9 supports broadcast-based discovery and Legacy mode, but not the optional diagnostic path.
+
+Session discovery and effects stop when the app is closed. Manufacturers, Bluetooth/offloaded playback paths and other equalizers can still bypass or take control of effects. If an effect is configured but the sound does not change, try the other mode and check for competing effects; no hardware-independent guarantee is possible.
+
+Precise Volume's official documentation describes [Legacy global-stream mode versus better audio-session detection](https://precisevolume.phascinate.com/docs/better-audio-detection/), [compatibility troubleshooting](https://precisevolume.phascinate.com/docs/faq/app-no-work/), and [DSP gain controls](https://precisevolume.phascinate.com/docs/faq/eq-effects-explained/). Its proprietary implementation is not public; this app uses Android's documented [AudioEffect session attachment](https://developer.android.com/reference/android/media/audiofx/AudioEffect) and [DynamicsProcessing input gain](https://developer.android.com/reference/android/media/audiofx/DynamicsProcessing), not copied Precise Volume internals.
 
 ### 🎛️ Hardware Button Functions
 - **Single Play/Pause**: Start timer + Audible, or pause/resume playback  
