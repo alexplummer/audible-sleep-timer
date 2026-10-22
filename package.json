@@ -1,6 +1,6 @@
 {
   "name": "sleeptimer",
-  "version": "0.0.1",
+  "version": "2.1.0",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -8,9 +8,9 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
-    "build": "cd android && gradlew assembleRelease",
-    "build:debug": "cd android && gradlew assembleDebug",
-    "build:clean": "cd android && gradlew clean"
+    "build": "cd android && bash ./gradlew assembleRelease",
+    "build:debug": "cd android && bash ./gradlew assembleDebug",
+    "build:clean": "cd android && bash ./gradlew clean"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",

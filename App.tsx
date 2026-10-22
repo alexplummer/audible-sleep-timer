@@ -1,401 +1,525 @@
 /**
- * Sleep Timer App
- * Configurable timer with hardware media button support
+ * Audible Sleep Timer
+ *
+ * The timer itself lives in native code (it keeps running with the screen off); this screen
+ * mirrors its state and sends commands to it.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
-import { NativeEventEmitter, NativeModules } from 'react-native';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  StatusBar, 
-  TextInput, 
-  TouchableOpacity,
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  AppState,
+  DeviceEventEmitter,
+  NativeModules,
   ScrollView,
-  PanResponder,
-  Dimensions
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-const DEFAULT_TIMER_DURATION = 15; // 15 minutes default
-const MAX_MINUTES = 60;
-const PRESET_MINUTES = [15, 20, 30, 45, 60];
+export type TimerState = 'idle' | 'running' | 'paused';
 
-// Simple in-memory storage for the last selected timer duration
-let lastSelectedDuration = DEFAULT_TIMER_DURATION;
-
-function formatTime(seconds: number) {
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-  const s = (seconds % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
+export interface NativeTimerState {
+  state: TimerState;
+  remainingMs: number;
+  durationMinutes: number;
+  minMinutes: number;
+  maxMinutes: number;
+  audiblePlaying: boolean;
+  audibleInstalled: boolean;
+  notificationAccess: boolean;
+  gainDb: number;
+  gainMinDb: number;
+  gainMaxDb: number;
+  gainSupported: boolean;
+  gainApplied: boolean;
+  gainOverridden: boolean;
+  gainError: string | null;
 }
 
-function formatMinutes(minutes: number) {
+interface SleepTimerModule {
+  getState(): Promise<NativeTimerState>;
+  setDuration(minutes: number): Promise<NativeTimerState>;
+  start(): Promise<NativeTimerState>;
+  stop(): Promise<NativeTimerState>;
+  resume(): Promise<NativeTimerState>;
+  setGain(db: number): Promise<NativeTimerState>;
+  openNotificationAccessSettings(): Promise<void>;
+  close(): Promise<void>;
+}
+
+export const STATE_EVENT = 'SleepTimerStateChanged';
+const PRESET_MINUTES = [15, 20, 30, 45, 60];
+const GAIN_STEP_DB = 0.5;
+
+const DEFAULT_STATE: NativeTimerState = {
+  state: 'idle',
+  remainingMs: 15 * 60_000,
+  durationMinutes: 15,
+  minMinutes: 1,
+  maxMinutes: 120,
+  audiblePlaying: false,
+  audibleInstalled: true,
+  notificationAccess: true,
+  gainDb: 0,
+  gainMinDb: -40,
+  gainMaxDb: 0,
+  gainSupported: true,
+  gainApplied: false,
+  gainOverridden: false,
+  gainError: null,
+};
+
+const nativeTimer = (): SleepTimerModule | undefined =>
+  NativeModules.SleepTimer;
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const roundGain = (db: number) => Math.round(db / GAIN_STEP_DB) * GAIN_STEP_DB;
+
+const logError = (action: string) => (error: unknown) =>
+  console.warn(`SleepTimer.${action} failed`, error);
+
+export function formatTime(ms: number) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60)
+    .toString()
+    .padStart(2, '0');
+  const s = (total % 60).toString().padStart(2, '0');
+  return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+}
+
+export function formatMinutes(minutes: number) {
   if (minutes < 60) {
     return `${minutes}m`;
-  } else {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return mins === 0 ? `${hours}h` : `${hours}h ${mins}m`;
   }
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins === 0 ? `${hours}h` : `${hours}h ${mins}m`;
+}
+
+/** Output level relative to the current system volume, as a percentage. */
+export function gainPercent(db: number) {
+  const percent = Math.pow(10, db / 20) * 100;
+  return percent < 10 ? percent.toFixed(1) : Math.round(percent).toString();
 }
 
 const App = () => {
-  const [timerMinutes, setTimerMinutes] = useState(lastSelectedDuration);
-  const [inputValue, setInputValue] = useState(lastSelectedDuration.toString());
-  const [timer, setTimer] = useState(lastSelectedDuration * 60);
-  const [running, setRunning] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const intervalRef = useRef<number | null>(null);
-  const sliderWidth = Dimensions.get('window').width - 80; // Account for padding
+  const [native, setNative] = useState<NativeTimerState>(DEFAULT_STATE);
+  const [minutes, setMinutes] = useState(DEFAULT_STATE.durationMinutes);
+  const [inputValue, setInputValue] = useState(
+    String(DEFAULT_STATE.durationMinutes),
+  );
+  const [gainDb, setGainDb] = useState(DEFAULT_STATE.gainDb);
+  const [endAt, setEndAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const editingDuration = useRef(false);
+  const editingGain = useRef(false);
 
-  // Update the last selected duration whenever timerMinutes changes
+  const applyState = useCallback((next: NativeTimerState) => {
+    const timestamp = Date.now();
+    setNative(next);
+    setEndAt(timestamp + next.remainingMs);
+    setNow(timestamp);
+    if (!editingDuration.current) {
+      setMinutes(next.durationMinutes);
+      setInputValue(String(next.durationMinutes));
+    }
+    if (!editingGain.current) {
+      setGainDb(next.gainDb);
+    }
+  }, []);
+
+  const refresh = useCallback(() => {
+    nativeTimer()?.getState().then(applyState).catch(logError('getState'));
+  }, [applyState]);
+
   useEffect(() => {
-    lastSelectedDuration = timerMinutes;
-  }, [timerMinutes]);
-
-  // Pan responder for slider dragging
-  const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: (event) => {
-      const { locationX } = event.nativeEvent;
-      updateSliderValue(locationX);
-    },
-    onPanResponderMove: (event, gestureState) => {
-      const { dx } = gestureState;
-      const currentPosition = (timerMinutes / MAX_MINUTES) * sliderWidth;
-      const newPosition = currentPosition + dx;
-      updateSliderValue(newPosition);
-    },
-  });
-
-  const updateSliderValue = (position: number) => {
-    const percentage = Math.max(0, Math.min(1, position / sliderWidth));
-    const newValue = Math.round(percentage * MAX_MINUTES);
-    const finalValue = Math.max(1, newValue);
-    setTimerMinutes(finalValue);
-    setInputValue(finalValue.toString());
-  };
-
-  // Listen for hardware media button events
-  useEffect(() => {
-    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
-    const subscription = mediaButtonEventEmitter.addListener('MediaButtonPlayPressed', () => {
-      console.log('Hardware play button pressed - starting timer');
-      // Only start if not already running to prevent double timers
-      if (!running) {
-        setTimer(timerMinutes * 60);
-        setRunning(true);
-      } else {
-        console.log('Timer already running, ignoring hardware button press');
+    refresh();
+    const stateSub = DeviceEventEmitter.addListener(STATE_EVENT, applyState);
+    const appStateSub = AppState.addEventListener('change', status => {
+      if (status === 'active') {
+        refresh();
       }
     });
-    return () => subscription.remove();
-  }, [timerMinutes, running]);
-
-  // Listen for app close events
-  useEffect(() => {
-    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
-    const subscription = mediaButtonEventEmitter.addListener('AppCloseRequested', () => {
-      console.log('App close requested - cleaning up and closing');
-      // Clean up any running timers
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      // Note: The native side will handle the actual app closure
-    });
-    return () => subscription.remove();
-  }, []);
-
-  // Listen for native timer completion events
-  useEffect(() => {
-    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
-    const subscription = mediaButtonEventEmitter.addListener('TimerCompleted', () => {
-      console.log('Native timer completed - stopping UI timer');
-      setRunning(false);
-      setPaused(false);
-      setTimer(timerMinutes * 60); // Reset to original duration
-    });
-    return () => subscription.remove();
-  }, [timerMinutes]);
-
-  // Listen for native timer pause events
-  useEffect(() => {
-    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
-    const subscription = mediaButtonEventEmitter.addListener('TimerPaused', () => {
-      console.log('Native timer paused - pausing UI timer');
-      setPaused(true);
-      setRunning(false); // Stop the UI countdown
-    });
-    return () => subscription.remove();
-  }, []);
-
-  // Listen for native timer resume events
-  useEffect(() => {
-    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
-    const subscription = mediaButtonEventEmitter.addListener('TimerResumed', () => {
-      console.log('Native timer resumed - resuming UI timer');
-      setPaused(false);
-      setRunning(true); // Resume the UI countdown
-    });
-    return () => subscription.remove();
-  }, []);
-
-  // Listen for native timer update events
-  useEffect(() => {
-    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
-    const subscription = mediaButtonEventEmitter.addListener('TimerUpdated', (newDurationSeconds: number) => {
-      console.log('Native timer updated with new duration:', newDurationSeconds);
-      setTimer(newDurationSeconds); // Update UI timer to new duration
-    });
-    return () => subscription.remove();
-  }, []);
-
-  // Listen for notification preset selection events
-  useEffect(() => {
-    const mediaButtonEventEmitter = new NativeEventEmitter(NativeModules.MediaButtonEvent);
-    const subscription = mediaButtonEventEmitter.addListener('TimerPresetSelected', (minutes: number) => {
-      console.log('Timer preset selected from notification:', minutes);
-      setTimerMinutes(minutes);
-      setInputValue(minutes.toString());
-      // The timer display will be updated by the timerMinutes useEffect
-    });
-    return () => subscription.remove();
-  }, []);
-
-  // Update native timer duration whenever timerMinutes changes
-  useEffect(() => {
-    if (NativeModules.TimerConfig) {
-      NativeModules.TimerConfig.setTimerDuration(timerMinutes)
-        .then((message: string) => console.log(message))
-        .catch((error: any) => console.error('Failed to set timer duration:', error));
-    }
-    
-    // If timer is currently running, restart it with the new duration
-    if (running) {
-      console.log('Timer is running - restarting with new duration:', timerMinutes, 'minutes');
-      setTimer(timerMinutes * 60); // Update UI timer to new duration
-      // The native timer will be automatically updated via TimerConfigModule.setTimerDuration
-    } else if (!paused) {
-      // If timer is not running and not paused, update the display to show new duration
-      setTimer(timerMinutes * 60);
-    }
-  }, [timerMinutes, running, paused]);
-
-  // Handle timer countdown
-  useEffect(() => {
-    if (running && timer > 0) {
-      // Sync with native timer every second
-      const syncTimer = () => {
-        if (NativeModules.MediaButtonEvent) {
-          NativeModules.MediaButtonEvent.getRemainingTime()
-            .then((result: any) => {
-              const { remainingSeconds, isRunning, isPaused } = result;
-              console.log('Native timer sync - remaining:', remainingSeconds, 'running:', isRunning, 'paused:', isPaused);
-              
-              // Update UI to match native timer state
-              setTimer(Math.max(0, remainingSeconds));
-              
-              // Handle state mismatches
-              if (!isRunning && !isPaused && running) {
-                // Native timer stopped, but UI thinks it's running
-                console.log('Native timer stopped - stopping UI timer');
-                setRunning(false);
-                setPaused(false);
-              } else if (isPaused && running) {
-                // Native timer paused, but UI thinks it's running
-                console.log('Native timer paused - pausing UI timer');
-                setRunning(false);
-                setPaused(true);
-              }
-            })
-            .catch((error: any) => {
-              console.warn('Failed to sync with native timer:', error);
-              // Fall back to local countdown if native sync fails
-              setTimer(t => t > 0 ? t - 1 : 0);
-            });
-        } else {
-          // Fall back to local countdown if native module not available
-          setTimer(t => t > 0 ? t - 1 : 0);
-        }
-      };
-      
-      // Start syncing immediately, then every second
-      syncTimer();
-      intervalRef.current = setInterval(syncTimer, 1000);
-    } else if (!running && intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      stateSub.remove();
+      appStateSub.remove();
     };
-  }, [running]);
+  }, [applyState, refresh]);
 
-  // Handle timer completion
   useEffect(() => {
-    if (running && timer === 0) {
-      console.log('Timer completed');
-      setRunning(false);
-      setPaused(false);
+    if (native.state !== 'running') {
+      return;
     }
-  }, [timer, running]);
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [native.state]);
+
+  const remainingMs =
+    native.state === 'running'
+      ? Math.max(0, endAt - now)
+      : native.state === 'paused'
+      ? native.remainingMs
+      : minutes * 60_000;
+
+  const commitDuration = useCallback(
+    (value: number) => {
+      const next = clamp(
+        Math.round(value),
+        native.minMinutes,
+        native.maxMinutes,
+      );
+      editingDuration.current = false;
+      setMinutes(next);
+      setInputValue(String(next));
+      nativeTimer()
+        ?.setDuration(next)
+        .then(applyState)
+        .catch(logError('setDuration'));
+    },
+    [applyState, native.minMinutes, native.maxMinutes],
+  );
+
+  const handleDurationSlide = (value: number) => {
+    editingDuration.current = true;
+    const next = Math.round(value);
+    setMinutes(next);
+    setInputValue(String(next));
+  };
 
   const handleInputChange = (text: string) => {
-    setInputValue(text);
-    const value = parseInt(text) || 0;
-    if (value > 0 && value <= 999) {
-      setTimerMinutes(value);
-    }
+    editingDuration.current = true;
+    setInputValue(text.replace(/[^0-9]/g, ''));
   };
 
-  const handlePresetPress = (minutes: number) => {
-    setTimerMinutes(minutes);
-    setInputValue(minutes.toString());
-  };
-
-  const handleStartStop = () => {
-    if (running) {
-      setRunning(false);
-      setPaused(false);
-      setTimer(timerMinutes * 60);
-    } else if (paused) {
-      // Resume from paused state
-      setPaused(false);
-      setRunning(true);
-      
-      // Trigger Audible to resume playing
-      if (NativeModules.MediaButtonEvent) {
-        NativeModules.MediaButtonEvent.startAudible()
-          .then((message: string) => console.log('Audible resumed from paused state:', message))
-          .catch((error: any) => console.error('Failed to resume Audible:', error));
-      }
+  const handleInputEnd = () => {
+    const value = parseInt(inputValue, 10);
+    if (Number.isFinite(value) && value > 0) {
+      commitDuration(value);
     } else {
-      setTimer(timerMinutes * 60);
-      setRunning(true);
-      setPaused(false);
-      
-      // Trigger Audible to start playing when start button is pressed
-      if (NativeModules.MediaButtonEvent) {
-        NativeModules.MediaButtonEvent.startAudible()
-          .then((message: string) => console.log('Audible started from start button:', message))
-          .catch((error: any) => console.error('Failed to start Audible:', error));
-      }
+      editingDuration.current = false;
+      setInputValue(String(minutes));
     }
   };
+
+  const handleMainButton = () => {
+    const module = nativeTimer();
+    if (!module) {
+      return;
+    }
+    const action =
+      native.state === 'running'
+        ? module.stop()
+        : native.state === 'paused'
+        ? module.resume()
+        : module.start();
+    action.then(applyState).catch(logError('startStop'));
+  };
+
+  const handleCancel = () => {
+    nativeTimer()?.stop().then(applyState).catch(logError('stop'));
+  };
+
+  const sendGain = useCallback(
+    (db: number) => {
+      nativeTimer()?.setGain(db).then(applyState).catch(logError('setGain'));
+    },
+    [applyState],
+  );
+
+  const handleGainSlide = (value: number) => {
+    editingGain.current = true;
+    const db = roundGain(value);
+    if (db !== gainDb) {
+      setGainDb(db);
+      sendGain(db);
+    }
+  };
+
+  const handleGainComplete = (value: number) => {
+    editingGain.current = false;
+    const db = roundGain(value);
+    setGainDb(db);
+    sendGain(db);
+  };
+
+  const nudgeGain = (delta: number) => {
+    const db = clamp(
+      roundGain(gainDb + delta),
+      native.gainMinDb,
+      native.gainMaxDb,
+    );
+    setGainDb(db);
+    sendGain(db);
+  };
+
+  const handleOpenAccess = () => {
+    nativeTimer()
+      ?.openNotificationAccessSettings()
+      .catch(logError('openNotificationAccessSettings'));
+  };
+
+  const handleClose = () => {
+    nativeTimer()?.close().catch(logError('close'));
+  };
+
+  const statusText =
+    native.state === 'running'
+      ? 'Running'
+      : native.state === 'paused'
+      ? 'Paused – continues when Audible plays'
+      : native.notificationAccess
+      ? 'Starts when Audible plays'
+      : 'Stopped';
+
+  const gainNote = !native.gainSupported
+    ? 'Volume fine-tuning needs Android 9 or newer.'
+    : native.gainError
+    ? `Volume fine-tuning is unavailable on this device (${native.gainError}).`
+    : native.gainOverridden
+    ? 'Another app (e.g. Precise Volume) is controlling the audio effect. Turn it off to use this slider.'
+    : gainDb >= 0
+    ? 'Off – audio plays at the normal system volume.'
+    : `${gainPercent(gainDb)}% of the current system volume.`;
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor="#121212" />
-        
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Header */}
+
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.header}>
             <Text style={styles.title}>Sleep Timer</Text>
-            <Text style={styles.subtitle}>Configure your sleep timer duration</Text>
+            <Text style={styles.subtitle}>
+              Pauses Audible when the timer runs out
+            </Text>
           </View>
 
-          {/* Timer Input Controls */}
-          <View style={styles.controlsContainer}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Timer Duration (minutes)</Text>
-              <TextInput
-                style={styles.input}
-                value={inputValue}
-                onChangeText={handleInputChange}
-                keyboardType="numeric"
-                placeholder="Minutes"
-                maxLength={3}
-              />
-            </View>
-            
-            <View style={styles.sliderContainer}>
-              <View 
-                style={styles.sliderTrack}
-                {...panResponder.panHandlers}
+          {!native.notificationAccess && (
+            <View style={[styles.card, styles.warningCard]}>
+              <Text style={styles.cardTitle}>Allow notification access</Text>
+              <Text style={styles.infoText}>
+                Needed so the timer can see when Audible starts or stops (for
+                example from your headphone button) and pause it reliably. No
+                notifications are read.
+              </Text>
+              <TouchableOpacity
+                testID="open-access"
+                style={styles.secondaryButton}
+                onPress={handleOpenAccess}
               >
-                <View 
-                  style={[
-                    styles.sliderProgress, 
-                    { width: `${(timerMinutes / MAX_MINUTES) * 100}%` }
-                  ]} 
-                />
-                <View 
-                  style={[
-                    styles.sliderThumb,
-                    { left: `${(timerMinutes / MAX_MINUTES) * 100}%` }
-                  ]}
-                />
-              </View>
-              <View style={styles.sliderLabels}>
-                <Text style={styles.sliderLabel}>1m</Text>
-                <Text style={styles.sliderLabel}>{formatMinutes(timerMinutes)}</Text>
-                <Text style={styles.sliderLabel}>60m</Text>
-              </View>
+                <Text style={styles.secondaryButtonText}>Open settings</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {!native.audibleInstalled && (
+            <View style={[styles.card, styles.warningCard]}>
+              <Text style={styles.infoText}>
+                Audible doesn't appear to be installed.
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.timerRow}>
+            <View style={styles.timerDisplay}>
+              <Text style={styles.timerText} testID="timer-text">
+                {formatTime(remainingMs)}
+              </Text>
+              <Text style={styles.timerStatus}>{statusText}</Text>
+              {native.notificationAccess && (
+                <Text style={styles.audibleStatus}>
+                  Audible{' '}
+                  {native.audiblePlaying ? 'is playing' : 'is not playing'}
+                </Text>
+              )}
+            </View>
+            <View>
+              <TouchableOpacity
+                testID="main-button"
+                style={[
+                  styles.startButton,
+                  native.state === 'running' && styles.stopButton,
+                ]}
+                onPress={handleMainButton}
+              >
+                <Text style={styles.startButtonText}>
+                  {native.state === 'running'
+                    ? 'Stop'
+                    : native.state === 'paused'
+                    ? 'Resume'
+                    : 'Start'}
+                </Text>
+              </TouchableOpacity>
+              {native.state === 'paused' && (
+                <TouchableOpacity
+                  testID="cancel-button"
+                  style={styles.cancelButton}
+                  onPress={handleCancel}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
-          {/* Preset Buttons */}
-          <View style={styles.presetsContainer}>
-            <Text style={styles.presetsTitle}>Quick Select</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Timer duration (minutes)</Text>
+            <TextInput
+              testID="duration-input"
+              style={styles.input}
+              value={inputValue}
+              onChangeText={handleInputChange}
+              onEndEditing={handleInputEnd}
+              keyboardType="number-pad"
+              placeholder="Minutes"
+              placeholderTextColor="#777777"
+              maxLength={3}
+            />
+            <Slider
+              testID="duration-slider"
+              style={styles.slider}
+              minimumValue={native.minMinutes}
+              maximumValue={native.maxMinutes}
+              step={1}
+              value={minutes}
+              onValueChange={handleDurationSlide}
+              onSlidingComplete={commitDuration}
+              minimumTrackTintColor="#bb86fc"
+              maximumTrackTintColor="#404040"
+              thumbTintColor="#bb86fc"
+            />
+            <View style={styles.sliderLabels}>
+              <Text style={styles.sliderLabel}>
+                {formatMinutes(native.minMinutes)}
+              </Text>
+              <Text style={styles.sliderLabel}>{formatMinutes(minutes)}</Text>
+              <Text style={styles.sliderLabel}>
+                {formatMinutes(native.maxMinutes)}
+              </Text>
+            </View>
             <View style={styles.presetsGrid}>
-              {PRESET_MINUTES.map((minutes) => (
+              {PRESET_MINUTES.map(preset => (
                 <TouchableOpacity
-                  key={minutes}
+                  key={preset}
+                  testID={`preset-${preset}`}
                   style={[
                     styles.presetButton,
-                    timerMinutes === minutes && styles.presetButtonActive
+                    minutes === preset && styles.presetButtonActive,
                   ]}
-                  onPress={() => handlePresetPress(minutes)}
+                  onPress={() => commitDuration(preset)}
                 >
-                  <Text style={[
-                    styles.presetButtonText,
-                    timerMinutes === minutes && styles.presetButtonTextActive
-                  ]}>
-                    {formatMinutes(minutes)}
+                  <Text
+                    style={[
+                      styles.presetButtonText,
+                      minutes === preset && styles.presetButtonTextActive,
+                    ]}
+                  >
+                    {formatMinutes(preset)}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
 
-          {/* Timer Display and Controls */}
-          <View style={styles.timerSection}>
-            <View style={styles.timerRow}>
-              <View style={styles.timerDisplay}>
-                <Text style={styles.timerText}>{formatTime(timer)}</Text>
-                <Text style={styles.timerStatus}>
-                  {running ? 'Running' : paused ? 'Paused' : 'Stopped'}
-                </Text>
-              </View>
-              
-              <TouchableOpacity 
-                style={[styles.startButton, running && styles.stopButton]} 
-                onPress={handleStartStop}
+          <View style={styles.card}>
+            <View style={styles.gainHeader}>
+              <Text style={styles.cardTitle}>Volume fine-tune</Text>
+              <Text style={styles.gainValue} testID="gain-value">
+                {gainDb >= 0 ? '0 dB' : `${gainDb.toFixed(1)} dB`}
+              </Text>
+            </View>
+            <View style={styles.gainRow}>
+              <TouchableOpacity
+                testID="gain-down"
+                style={styles.nudgeButton}
+                onPress={() => nudgeGain(-GAIN_STEP_DB)}
+                disabled={!native.gainSupported}
               >
-                <Text style={styles.startButtonText}>
-                  {running ? 'Stop' : paused ? 'Resume' : 'Start'} Timer
-                </Text>
+                <Text style={styles.nudgeButtonText}>−</Text>
+              </TouchableOpacity>
+              <Slider
+                testID="gain-slider"
+                style={styles.gainSlider}
+                minimumValue={native.gainMinDb}
+                maximumValue={native.gainMaxDb}
+                step={GAIN_STEP_DB}
+                value={gainDb}
+                disabled={!native.gainSupported}
+                onValueChange={handleGainSlide}
+                onSlidingComplete={handleGainComplete}
+                minimumTrackTintColor="#03dac6"
+                maximumTrackTintColor="#404040"
+                thumbTintColor="#03dac6"
+              />
+              <TouchableOpacity
+                testID="gain-up"
+                style={styles.nudgeButton}
+                onPress={() => nudgeGain(GAIN_STEP_DB)}
+                disabled={!native.gainSupported}
+              >
+                <Text style={styles.nudgeButtonText}>+</Text>
               </TouchableOpacity>
             </View>
+            <Text style={styles.infoText}>{gainNote}</Text>
+            <Text style={styles.infoTextSmall}>
+              Lowers the sound below the quietest system volume step without
+              changing Android's volume levels. Removed when the app is closed.
+            </Text>
+            {gainDb < 0 && (
+              <TouchableOpacity
+                testID="gain-reset"
+                style={styles.secondaryButton}
+                onPress={() => nudgeGain(-gainDb)}
+              >
+                <Text style={styles.secondaryButtonText}>Reset to 0 dB</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
-          {/* Hardware Button Info */}
-          <View style={styles.infoContainer}>
-            <Text style={styles.infoTitle}>Bluetooth Hardware Button</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Headphone button</Text>
             <Text style={styles.infoText}>
-              Press your device's media play button to start the timer even when the screen is off. 
-              Audible will automatically pause when the timer completes.
+              Press play on your headphones (screen can stay off): Audible
+              starts and so does the timer. When the timer runs out, Audible is
+              paused. Press play again to restart it. Double-press volume down
+              while the app is open to skip back.
             </Text>
           </View>
+
+          <TouchableOpacity
+            testID="close-button"
+            style={styles.closeButton}
+            onPress={handleClose}
+          >
+            <Text style={styles.closeButtonText}>Close app</Text>
+          </TouchableOpacity>
+          <Text style={styles.closeHint}>
+            Stops the timer and volume fine-tune and fully shuts the app down.
+          </Text>
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
   );
+};
+
+const cardShadow = {
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.3,
+  shadowRadius: 4,
 };
 
 const styles = StyleSheet.create({
@@ -409,7 +533,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 24,
   },
   title: {
     fontSize: 28,
@@ -422,32 +546,87 @@ const styles = StyleSheet.create({
     color: '#b0b0b0',
     textAlign: 'center',
   },
-  controlsContainer: {
-    marginBottom: 40,
+  card: {
     backgroundColor: '#1e1e1e',
     borderRadius: 12,
     padding: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    marginBottom: 20,
+    ...cardShadow,
   },
-  inputContainer: {
-    alignItems: 'center',
-    marginBottom: 30,
+  warningCard: {
+    borderWidth: 1,
+    borderColor: '#cf6679',
   },
-  inputLabel: {
-    fontSize: 16,
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
     color: '#ffffff',
     marginBottom: 10,
-    fontWeight: '500',
+  },
+  timerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1e1e1e',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 20,
+    ...cardShadow,
+  },
+  timerDisplay: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  timerText: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    fontFamily: 'monospace',
+  },
+  timerStatus: {
+    fontSize: 15,
+    color: '#b0b0b0',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  audibleStatus: {
+    fontSize: 13,
+    color: '#808080',
+    marginTop: 4,
+  },
+  startButton: {
+    backgroundColor: '#bb86fc',
+    paddingHorizontal: 25,
+    paddingVertical: 15,
+    borderRadius: 25,
+    marginLeft: 20,
+    alignItems: 'center',
+    ...cardShadow,
+  },
+  stopButton: {
+    backgroundColor: '#cf6679',
+  },
+  startButtonText: {
+    color: '#000000',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  cancelButton: {
+    marginLeft: 20,
+    marginTop: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#b0b0b0',
+    fontSize: 15,
   },
   input: {
+    alignSelf: 'center',
     borderWidth: 2,
     borderColor: '#404040',
     borderRadius: 8,
-    padding: 15,
+    padding: 12,
     fontSize: 18,
     textAlign: 'center',
     backgroundColor: '#2a2a2a',
@@ -455,74 +634,33 @@ const styles = StyleSheet.create({
     width: 120,
     fontWeight: 'bold',
   },
-  sliderContainer: {
+  slider: {
     width: '100%',
-  },
-  sliderTrack: {
-    height: 8,
-    backgroundColor: '#404040',
-    borderRadius: 4,
-    position: 'relative',
-    marginVertical: 20,
-  },
-  sliderProgress: {
-    height: '100%',
-    backgroundColor: '#bb86fc',
-    borderRadius: 4,
-  },
-  sliderThumb: {
-    width: 20,
-    height: 20,
-    backgroundColor: '#bb86fc',
-    borderRadius: 10,
-    position: 'absolute',
-    top: -6,
-    marginLeft: -10,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    height: 40,
+    marginTop: 16,
   },
   sliderLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 5,
   },
   sliderLabel: {
     fontSize: 12,
     color: '#b0b0b0',
   },
-  presetsContainer: {
-    marginBottom: 30,
-  },
-  presetsTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 15,
-    textAlign: 'center',
-  },
   presetsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 10,
+    marginTop: 16,
   },
   presetButton: {
     backgroundColor: '#2a2a2a',
     borderWidth: 2,
     borderColor: '#404040',
     borderRadius: 8,
-    paddingHorizontal: 12,
     paddingVertical: 12,
     flex: 1,
     marginHorizontal: 3,
     alignItems: 'center',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
   },
   presetButtonActive: {
     borderColor: '#bb86fc',
@@ -537,77 +675,86 @@ const styles = StyleSheet.create({
     color: '#bb86fc',
     fontWeight: 'bold',
   },
-  timerSection: {
-    marginBottom: 30,
-  },
-  timerRow: {
+  gainHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1e1e1e',
-    borderRadius: 12,
-    padding: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    alignItems: 'baseline',
   },
-  timerDisplay: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  timerText: {
-    fontSize: 48,
+  gainValue: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#ffffff',
+    color: '#03dac6',
     fontFamily: 'monospace',
   },
-  timerStatus: {
-    fontSize: 16,
-    color: '#b0b0b0',
-    marginTop: 8,
+  gainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  startButton: {
-    backgroundColor: '#bb86fc',
-    paddingHorizontal: 25,
-    paddingVertical: 15,
-    borderRadius: 25,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    marginLeft: 20,
+  gainSlider: {
+    flex: 1,
+    height: 40,
+    marginHorizontal: 8,
   },
-  stopButton: {
-    backgroundColor: '#cf6679',
+  nudgeButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#2a2a2a',
+    borderWidth: 2,
+    borderColor: '#404040',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  startButtonText: {
-    color: '#000000',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  infoContainer: {
-    backgroundColor: '#1e1e1e',
-    padding: 20,
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-  },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+  nudgeButtonText: {
     color: '#ffffff',
-    marginBottom: 10,
+    fontSize: 22,
+    fontWeight: 'bold',
   },
   infoText: {
     fontSize: 14,
     color: '#b0b0b0',
     lineHeight: 20,
+  },
+  infoTextSmall: {
+    fontSize: 12,
+    color: '#808080',
+    lineHeight: 18,
+    marginTop: 8,
+  },
+  secondaryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#bb86fc',
+  },
+  secondaryButtonText: {
+    color: '#bb86fc',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  closeButton: {
+    backgroundColor: '#2a2a2a',
+    borderWidth: 2,
+    borderColor: '#cf6679',
+    borderRadius: 25,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    color: '#cf6679',
+    fontSize: 17,
+    fontWeight: 'bold',
+  },
+  closeHint: {
+    fontSize: 12,
+    color: '#808080',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
   },
 });
 

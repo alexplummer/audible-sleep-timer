@@ -9,6 +9,7 @@ import com.facebook.react.ReactNativeHost
 import com.facebook.react.ReactPackage
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
+import com.sleeptimer.service.AppShutdown
 
 class MainApplication : Application(), ReactApplication {
 
@@ -16,9 +17,7 @@ class MainApplication : Application(), ReactApplication {
       object : DefaultReactNativeHost(this) {
         override fun getPackages(): List<ReactPackage> =
             PackageList(this).packages.apply {
-              // Packages that cannot be autolinked yet can be added manually here, for example:
-              add(MediaButtonEventPackage())
-              add(MediaControlPackage())
+              add(SleepTimerPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"
@@ -34,28 +33,7 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    AppShutdown.initialize(this)
     loadReactNative(this)
-    createNotificationChannel()
-  }
-  
-  private fun createNotificationChannel() {
-    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-      try {
-        val channelId = "SleepTimerForegroundService"
-        val channel = android.app.NotificationChannel(
-          channelId,
-          "Sleep Timer Foreground Service",
-          android.app.NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-          description = "Shows when the sleep timer is running"
-          setShowBadge(false)
-        }
-        
-        val notificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        notificationManager.createNotificationChannel(channel)
-      } catch (e: Exception) {
-        android.util.Log.e("MainApplication", "Error creating notification channel", e)
-      }
-    }
   }
 }

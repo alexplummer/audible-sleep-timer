@@ -1,47 +1,99 @@
 package com.sleeptimer.service;
 
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
+
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
+import androidx.core.app.ServiceCompat;
+import androidx.core.content.ContextCompat;
 
-public class ForegroundService extends Service {
-    private static final String CHANNEL_ID = "SleepTimerForegroundService";
-    private static final int NOTIFICATION_ID = 1;
+import com.sleeptimer.MainActivity;
+
+import java.text.DateFormat;
+import java.util.Date;
+import java.util.Locale;
+
+/**
+ * Keeps the app alive while it is open so the timer can run with the screen off, and shows the
+ * timer notification. It is never restarted by the system (START_NOT_STICKY) and is only started
+ * from the visible app, so once closed it stays closed.
+ */
+public class ForegroundService extends Service implements SleepTimer.Listener {
+
+    public static final String CHANNEL_ID = "sleep_timer";
+    private static final String LEGACY_CHANNEL_ID = "SleepTimerForegroundService";
+    public static final int NOTIFICATION_ID = 1;
+    private static final int[] PRESET_MINUTES = {15, 45};
     private static final String TAG = "ForegroundService";
-    private static ForegroundService instance;
-    
-    public ForegroundService() {
-        Log.d(TAG, "ForegroundService constructor called");
+
+    @Nullable private static volatile ForegroundService instance;
+
+    public static boolean isRunning() {
+        return instance != null;
+    }
+
+    public static void start(Context context) {
+        if (AppShutdown.isClosing()) return;
+        try {
+            ContextCompat.startForegroundService(context, new Intent(context, ForegroundService.class));
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Could not start service", e);
+        }
+    }
+
+    static void stop(Context context) {
+        ForegroundService service = instance;
+        if (service != null) {
+            ServiceCompat.stopForeground(service, ServiceCompat.STOP_FOREGROUND_REMOVE);
+            service.stopSelf();
+        }
+        context.stopService(new Intent(context, ForegroundService.class));
     }
 
     @Override
     public void onCreate() {
-        Log.d(TAG, "ForegroundService onCreate called");
         super.onCreate();
         instance = this;
         createNotificationChannel();
-        MediaButtonReceiver.register(this);
+        enterForeground();
+        if (AppShutdown.isClosing()) return;
+        SleepTimer.get(this).addListener(this);
+        AudibleController.get(this).startObserving();
+        GainController.get(this).activate();
+        AudibleListenerService.rebind(this);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.d(TAG, "ForegroundService onStartCommand called");
-        
-        // Create initial notification
-        updateNotificationInternal("Ready to handle media button presses", 0);
-        
-        return START_STICKY;
+        // Every startForegroundService() call must be followed by startForeground().
+        enterForeground();
+        if (AppShutdown.isClosing()) {
+            stopSelf();
+        }
+        return START_NOT_STICKY;
     }
 
     @Override
     public void onDestroy() {
-        Log.d(TAG, "ForegroundService onDestroy called");
+        SleepTimer timer = SleepTimer.get(this);
+        timer.removeListener(this);
+        // Without the service nothing may keep running in the background.
+        timer.shutdown();
+        AudibleController.get(this).cancelPendingPause();
+        AudibleController.get(this).stopObserving();
+        GainController.get(this).release();
+        AudibleListenerService.unbind(this);
         instance = null;
         super.onDestroy();
     }
@@ -52,111 +104,124 @@ public class ForegroundService extends Service {
         return null;
     }
 
-    private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                NotificationChannel channel = new NotificationChannel(
-                        CHANNEL_ID,
-                        "Sleep Timer Service",
-                        NotificationManager.IMPORTANCE_LOW
-                );
-                channel.setDescription("Keeps sleep timer active for media button handling");
-                channel.setShowBadge(false);
-                NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-                if (manager != null) {
-                    manager.createNotificationChannel(channel);
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Error creating notification channel", e);
-            }
-        }
-    }
-    
-    public static void updateNotification(String status, long remainingTimeMs) {
-        if (instance != null) {
-            instance.updateNotificationInternal(status, remainingTimeMs);
-        }
-    }
-    
-    private void updateNotificationInternal(String status, long remainingTimeMs) {
+    @Override
+    public void onSleepTimerChanged() {
+        if (instance != this || AppShutdown.isClosing()) return;
         try {
-            // Create close app intent
-            android.content.Intent closeIntent = new android.content.Intent(this, CloseAppReceiver.class);
-            closeIntent.setAction(CloseAppReceiver.ACTION_CLOSE_APP);
-            android.app.PendingIntent closePendingIntent = android.app.PendingIntent.getBroadcast(
-                this, 1, closeIntent, android.app.PendingIntent.FLAG_IMMUTABLE
-            );
-
-            String contentText;
-            if (remainingTimeMs > 0) {
-                String timeRemaining = formatTime(remainingTimeMs);
-                contentText = status + " - " + timeRemaining + " remaining";
-            } else {
-                contentText = status;
-            }
-
-            NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-                    .setContentTitle("Sleep Timer")
-                    .setContentText(contentText)
-                    .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-                    .setOngoing(true)
-                    .setPriority(NotificationCompat.PRIORITY_LOW)
-                    .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                    .setAutoCancel(false)
-                    .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Close App", closePendingIntent);
-
-            // Add preset timer buttons
-            int[] presetMinutes = {15, 45};
-            for (int i = 0; i < presetMinutes.length; i++) {
-                int minutes = presetMinutes[i];
-                android.content.Intent presetIntent = new android.content.Intent(this, PresetTimerReceiver.class);
-                presetIntent.setAction(PresetTimerReceiver.ACTION_SET_TIMER);
-                presetIntent.putExtra(PresetTimerReceiver.EXTRA_MINUTES, minutes);
-                
-                android.app.PendingIntent presetPendingIntent = android.app.PendingIntent.getBroadcast(
-                    this, 100 + i, presetIntent, android.app.PendingIntent.FLAG_IMMUTABLE
-                );
-                
-                builder.addAction(android.R.drawable.ic_menu_recent_history, minutes + "m", presetPendingIntent);
-            }
-
-            android.content.Intent notificationIntent = new android.content.Intent(this, com.sleeptimer.MainActivity.class);
-            android.app.PendingIntent pendingIntent = android.app.PendingIntent.getActivity(
-                this, 0, notificationIntent, android.app.PendingIntent.FLAG_IMMUTABLE
-            );
-            builder.setContentIntent(pendingIntent);
-            
-            // Set custom big text style to show "Reset Timer:" header
-            NotificationCompat.BigTextStyle bigTextStyle = new NotificationCompat.BigTextStyle()
-                .setBigContentTitle("Sleep Timer")
-                .bigText(contentText + "\n\nReset Timer: Use buttons below to change duration");
-            builder.setStyle(bigTextStyle);
-            
-            android.app.Notification notification = builder.build();
-            
-            // Use startForeground for the first notification, notify for updates
-            if (remainingTimeMs == 0 && "Ready to handle media button presses".equals(status)) {
-                startForeground(NOTIFICATION_ID, notification);
-            } else {
-                NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-                if (manager != null) {
-                    manager.notify(NOTIFICATION_ID, notification);
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error updating notification", e);
+            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, buildNotification());
+        } catch (SecurityException e) {
+            // POST_NOTIFICATIONS denied; the service keeps running without a visible notification.
+            Log.w(TAG, "Notification permission missing", e);
         }
     }
-    
-    private String formatTime(long milliseconds) {
-        long seconds = milliseconds / 1000;
-        long minutes = seconds / 60;
-        long hours = minutes / 60;
-        
-        if (hours > 0) {
-            return String.format("%d:%02d:%02d", hours, minutes % 60, seconds % 60);
-        } else {
-            return String.format("%d:%02d", minutes, seconds % 60);
+
+    private void enterForeground() {
+        int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                ? ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                : 0;
+        try {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(), type);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Could not enter foreground", e);
+            stopSelf();
         }
+    }
+
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null) return;
+        NotificationChannel channel = new NotificationChannel(
+                CHANNEL_ID, "Sleep timer", NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription("Shows the sleep timer and its controls");
+        channel.setShowBadge(false);
+        channel.setSound(null, null);
+        channel.enableVibration(false);
+        manager.createNotificationChannel(channel);
+        manager.deleteNotificationChannel(LEGACY_CHANNEL_ID);
+    }
+
+    private Notification buildNotification() {
+        SleepTimer timer = SleepTimer.get(this);
+        AudibleController audible = AudibleController.get(this);
+        long remainingMs = timer.getRemainingMs();
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+                .setContentIntent(activityIntent());
+
+        String text;
+        switch (timer.getState()) {
+            case RUNNING: {
+                long endWallClock = System.currentTimeMillis() + remainingMs;
+                String at = DateFormat.getTimeInstance(DateFormat.SHORT, Locale.getDefault())
+                        .format(new Date(endWallClock));
+                builder.setContentTitle("Sleep timer running")
+                        .setWhen(endWallClock)
+                        .setShowWhen(true)
+                        .setUsesChronometer(true)
+                        .setChronometerCountDown(true);
+                text = "Audible pauses at " + at;
+                break;
+            }
+            case PAUSED:
+                builder.setContentTitle("Sleep timer paused").setShowWhen(false);
+                text = formatDuration(remainingMs) + " left - continues when Audible plays";
+                break;
+            default:
+                builder.setContentTitle("Sleep timer ready (" + timer.getDurationMinutes() + " min)")
+                        .setShowWhen(false);
+                text = audible.isObserving()
+                        ? "Starts when Audible plays"
+                        : "Open the app to allow notification access";
+                break;
+        }
+        builder.setContentText(text);
+
+        builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Close", closeIntent());
+        for (int i = 0; i < PRESET_MINUTES.length; i++) {
+            builder.addAction(android.R.drawable.ic_menu_recent_history,
+                    PRESET_MINUTES[i] + " min", presetIntent(i, PRESET_MINUTES[i]));
+        }
+        return builder.build();
+    }
+
+    private PendingIntent activityIntent() {
+        Intent intent = new Intent(this, MainActivity.class)
+                .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        return PendingIntent.getActivity(this, 0, intent,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    private PendingIntent closeIntent() {
+        Intent intent = new Intent(this, CloseAppReceiver.class)
+                .setAction(CloseAppReceiver.ACTION_CLOSE_APP);
+        return PendingIntent.getBroadcast(this, 1, intent,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    private PendingIntent presetIntent(int index, int minutes) {
+        Intent intent = new Intent(this, PresetTimerReceiver.class)
+                .setAction(PresetTimerReceiver.ACTION_SET_TIMER)
+                .putExtra(PresetTimerReceiver.EXTRA_MINUTES, minutes);
+        return PendingIntent.getBroadcast(this, 100 + index, intent,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    private static String formatDuration(long ms) {
+        long totalSeconds = (ms + 999) / 1000;
+        long h = totalSeconds / 3600;
+        long m = (totalSeconds % 3600) / 60;
+        long s = totalSeconds % 60;
+        return h > 0
+                ? String.format(Locale.US, "%d:%02d:%02d", h, m, s)
+                : String.format(Locale.US, "%d:%02d", m, s);
     }
 }
