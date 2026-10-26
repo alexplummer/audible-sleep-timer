@@ -25,6 +25,7 @@ import com.sleeptimer.service.AudibleController;
 import com.sleeptimer.service.AudibleListenerService;
 import com.sleeptimer.service.ButtonLog;
 import com.sleeptimer.service.GainController;
+import com.sleeptimer.service.HeadsetButtons;
 import com.sleeptimer.service.SleepTimer;
 
 import java.util.Locale;
@@ -94,6 +95,11 @@ public class SleepTimerModule extends ReactContextBaseJavaModule implements Slee
     public void clearButtonLog(Promise promise) {
         ButtonLog.get(ctx()).clear();
         promise.resolve(null);
+    }
+
+    @ReactMethod
+    public void setHeadsetSteps(boolean enabled, Promise promise) {
+        run(promise, () -> HeadsetButtons.get(ctx()).setEnabled(enabled));
     }
 
     @ReactMethod
@@ -225,6 +231,7 @@ public class SleepTimerModule extends ReactContextBaseJavaModule implements Slee
         map.putInt("gainSessionCount", gain.getSessionCount());
         map.putString("gainError", gain.getError());
         map.putBoolean("keyFilterEnabled", ButtonLog.isKeyFilterEnabled(context));
+        map.putBoolean("headsetStepsEnabled", HeadsetButtons.get(context).isEnabled());
         return map;
     }
 }

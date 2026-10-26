@@ -18,7 +18,9 @@ public class ButtonLoggerService extends AccessibilityService {
 
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
-        if (!AppShutdown.isClosing()) ButtonLog.get(this).logKey("filter", event);
+        if (AppShutdown.isClosing()) return false;
+        ButtonLog.get(this).logKey("filter", event);
+        HeadsetButtons.get(this).onKeyEvent(event);
         return false;
     }
 

@@ -36,6 +36,7 @@ const baseState: NativeTimerState = {
   gainSessionCount: 0,
   gainError: null,
   keyFilterEnabled: false,
+  headsetStepsEnabled: true,
 };
 
 const resolved = (overrides: Partial<NativeTimerState> = {}) =>
@@ -63,6 +64,9 @@ function mockModule() {
     ),
     clearButtonLog: jest.fn(() => Promise.resolve()),
     openAccessibilitySettings: jest.fn(() => Promise.resolve()),
+    setHeadsetSteps: jest.fn((enabled: boolean) =>
+      Promise.resolve({ ...baseState, headsetStepsEnabled: enabled }),
+    ),
   };
   NativeModules.SleepTimer = module;
   return module;
@@ -364,4 +368,18 @@ test('shows the button log, live entries and key filter controls', async () => {
   expect(
     renderer.root.findAllByProps({ testID: 'open-key-filter' }),
   ).toHaveLength(0);
+});
+
+test('toggles headset fine steps', async () => {
+  const module = mockModule();
+  const renderer = await render();
+  expect(text(renderer, 'headset-steps-status')).toContain('0.5 dB');
+  expect(text(renderer, 'headset-steps-status')).toContain('key filter');
+
+  await press(renderer, 'headset-steps-off');
+  expect(module.setHeadsetSteps).toHaveBeenCalledWith(false);
+  expect(text(renderer, 'headset-steps-status')).toContain('as usual');
+
+  await press(renderer, 'headset-steps-on');
+  expect(module.setHeadsetSteps).toHaveBeenLastCalledWith(true);
 });

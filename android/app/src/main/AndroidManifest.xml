@@ -16,6 +16,10 @@
   <!-- Queries for package visibility (Android 11+) -->
   <queries>
     <package android:name="com.audible.application" />
+    <!-- Text-to-speech engines for the spoken time. -->
+    <intent>
+      <action android:name="android.intent.action.TTS_SERVICE" />
+    </intent>
   </queries>
 
     <application

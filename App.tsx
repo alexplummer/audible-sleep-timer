@@ -43,6 +43,7 @@ export interface NativeTimerState {
   gainSessionCount: number;
   gainError: string | null;
   keyFilterEnabled: boolean;
+  headsetStepsEnabled: boolean;
 }
 
 interface SleepTimerModule {
@@ -57,6 +58,7 @@ interface SleepTimerModule {
   getButtonLog(): Promise<string[]>;
   clearButtonLog(): Promise<void>;
   openAccessibilitySettings(): Promise<void>;
+  setHeadsetSteps(enabled: boolean): Promise<NativeTimerState>;
   close(): Promise<void>;
 }
 
@@ -86,6 +88,7 @@ const DEFAULT_STATE: NativeTimerState = {
   gainSessionCount: 0,
   gainError: null,
   keyFilterEnabled: false,
+  headsetStepsEnabled: true,
 };
 
 const nativeTimer = (): SleepTimerModule | undefined =>
@@ -298,6 +301,13 @@ const App = () => {
     nativeTimer()
       ?.openAccessibilitySettings()
       .catch(logError('openAccessibilitySettings'));
+  };
+
+  const handleHeadsetSteps = (enabled: boolean) => {
+    nativeTimer()
+      ?.setHeadsetSteps(enabled)
+      .then(applyState)
+      .catch(logError('setHeadsetSteps'));
   };
 
   const handleClearLog = () => {
@@ -610,12 +620,45 @@ const App = () => {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Headphone button</Text>
+            <Text style={styles.cardTitle}>Headphone buttons</Text>
             <Text style={styles.infoText}>
-              Press play on your headphones (screen can stay off): Audible
-              starts and so does the timer. When the timer runs out, Audible is
-              paused. Press play again to restart it. Double-press volume down
-              while the app is open to skip back.
+              Play/pause starts Audible and the timer with the screen off; when
+              the timer runs out Audible pauses. Double-press the phone's volume
+              down while the app is open to skip back.
+            </Text>
+            <View style={styles.presetsGrid}>
+              <TouchableOpacity
+                testID="headset-steps-on"
+                style={[
+                  styles.presetButton,
+                  native.headsetStepsEnabled && styles.presetButtonActive,
+                ]}
+                onPress={() => handleHeadsetSteps(true)}
+                disabled={!native.gainSupported}
+              >
+                <Text style={styles.presetButtonText}>Fine steps</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="headset-steps-off"
+                style={[
+                  styles.presetButton,
+                  !native.headsetStepsEnabled && styles.presetButtonActive,
+                ]}
+                onPress={() => handleHeadsetSteps(false)}
+              >
+                <Text style={styles.presetButtonText}>System volume</Text>
+              </TouchableOpacity>
+            </View>
+            <Text testID="headset-steps-status" style={styles.infoTextSmall}>
+              {!native.gainSupported
+                ? 'Fine steps need Android 9 or newer.'
+                : native.headsetStepsEnabled
+                ? `Bluetooth headphone volume buttons move volume fine-tune by ${GAIN_STEP_DB} dB while Audible plays (screen off or this app open). At 0 dB, volume up raises the system volume. Double-press volume up to hear the time (24-hour). ${
+                    native.keyFilterEnabled
+                      ? 'Phone volume buttons are recognised and change the system volume as usual.'
+                      : "Turn on the key filter below so the phone's own volume buttons keep changing the system volume with the screen off."
+                  }`
+                : 'Headphone volume buttons change the system volume as usual.'}
             </Text>
           </View>
 

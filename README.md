@@ -14,6 +14,8 @@ Audible's own sleep timer is unreliable. It often fails to restart, and you have
 - **Notification controls** – live countdown, 15 / 45 minute presets and Close, all from the notification.
 - **Runs with the screen off** – the countdown is native and uses exact alarms, so it survives Doze.
 - **Volume fine-tune** – lower Audible's output from 0 to -40 dB in 0.5 dB steps, below Android's quietest volume step (Android 9+).
+- **Headphone volume fine steps** – while Audible plays, your Bluetooth headphones' volume buttons move the fine-tune by 0.5 dB instead of a whole system volume step. The phone's own buttons still change the system volume.
+- **Spoken time** – double-press volume up on your headphones to hear the current time, e.g. "16:29", at your listening level.
 - **Chapter back** – double-press volume down while the app is open.
 - **Button log** – shows what your headphone buttons send to the phone (key presses, volume changes, device connects).
 - **Clean close** – Close stops the timer, removes volume changes and fully shuts the app down. It never pauses Audible on close.
@@ -36,6 +38,18 @@ adb -d shell pm grant com.sleeptimer android.permission.DUMP
 ```
 
 Then play Audible and tap **Retry audio detection**. Revoke with `adb -d shell pm revoke com.sleeptimer android.permission.DUMP`. **Legacy mix** is a fallback that affects all audio and is bypassed on some phones.
+
+### Headphone volume buttons
+
+Many Bluetooth headphones (using "absolute volume") don't send button presses. They change the phone's media volume directly. While Audible is playing over Bluetooth, with the screen off or the app open, the app treats such a change as a headphone press. It puts the system volume back and moves the fine-tune instead:
+
+- **Volume down / up** – 0.5 dB quieter / louder. At 0 dB, volume up raises the system volume. At -40 dB, volume down lowers it.
+- **Double-press volume up** – speaks the time in 24-hour format. The first press's step is undone.
+- Holding volume up is sent by most headphones as "next" straight to Audible, so it can't be used.
+
+You may briefly hear the system volume change by one step before it is put back. Keep the system volume below maximum, because at maximum the headphones send nothing for volume up. Choose **System volume** in the app to turn this off.
+
+With the screen off, Android may hide the phone's own volume-button presses from apps. Turn on the key filter (below) so the app can recognise them and leave them as normal system volume changes.
 
 ### Button log
 
