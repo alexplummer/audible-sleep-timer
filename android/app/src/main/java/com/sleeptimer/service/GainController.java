@@ -53,7 +53,9 @@ public final class GainController {
         appContext = context;
         prefs = context.getSharedPreferences(SleepTimer.PREFS, Context.MODE_PRIVATE);
         gainDb = normalize(prefs.getFloat(KEY_GAIN_DB, MAX_DB));
-        legacy = prefs.getBoolean(KEY_LEGACY, false);
+        // Legacy mix is no longer offered in the UI; clear any earlier selection.
+        legacy = false;
+        prefs.edit().remove(KEY_LEGACY).apply();
         discovery = isSupported() ? new AudibleAudioSessions(context, (next, failure) -> {
             sessions = next;
             detectionError = failure;

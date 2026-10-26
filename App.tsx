@@ -53,18 +53,13 @@ interface SleepTimerModule {
   stop(): Promise<NativeTimerState>;
   resume(): Promise<NativeTimerState>;
   setGain(db: number): Promise<NativeTimerState>;
-  setGainLegacyMode(enabled: boolean): Promise<NativeTimerState>;
   openNotificationAccessSettings(): Promise<void>;
-  getButtonLog(): Promise<string[]>;
-  clearButtonLog(): Promise<void>;
   openAccessibilitySettings(): Promise<void>;
   setHeadsetSteps(enabled: boolean): Promise<NativeTimerState>;
   close(): Promise<void>;
 }
 
 export const STATE_EVENT = 'SleepTimerStateChanged';
-export const BUTTON_LOG_EVENT = 'SleepTimerButtonLog';
-const MAX_LOG_ENTRIES = 300;
 const PRESET_MINUTES = [15, 20, 30, 45, 60];
 const GAIN_STEP_DB = 0.5;
 
@@ -121,12 +116,6 @@ export function formatMinutes(minutes: number) {
   return mins === 0 ? `${hours}h` : `${hours}h ${mins}m`;
 }
 
-/** Output level relative to the current system volume, as a percentage. */
-export function gainPercent(db: number) {
-  const percent = Math.pow(10, db / 20) * 100;
-  return percent < 10 ? percent.toFixed(1) : Math.round(percent).toString();
-}
-
 const App = () => {
   const [native, setNative] = useState<NativeTimerState>(DEFAULT_STATE);
   const [minutes, setMinutes] = useState(DEFAULT_STATE.durationMinutes);
@@ -136,7 +125,6 @@ const App = () => {
   const [gainDb, setGainDb] = useState(DEFAULT_STATE.gainDb);
   const [endAt, setEndAt] = useState(0);
   const [now, setNow] = useState(() => Date.now());
-  const [buttonLog, setButtonLog] = useState<string[]>([]);
   const editingDuration = useRef(false);
   const editingGain = useRef(false);
 
@@ -171,19 +159,6 @@ const App = () => {
       appStateSub.remove();
     };
   }, [applyState, refresh]);
-
-  useEffect(() => {
-    nativeTimer()
-      ?.getButtonLog()
-      .then(entries => setButtonLog(entries.slice(-MAX_LOG_ENTRIES)))
-      .catch(logError('getButtonLog'));
-    const logSub = DeviceEventEmitter.addListener(
-      BUTTON_LOG_EVENT,
-      (entry: string) =>
-        setButtonLog(prev => [...prev, entry].slice(-MAX_LOG_ENTRIES)),
-    );
-    return () => logSub.remove();
-  }, []);
 
   useEffect(() => {
     if (native.state !== 'running') {
@@ -310,20 +285,8 @@ const App = () => {
       .catch(logError('setHeadsetSteps'));
   };
 
-  const handleClearLog = () => {
-    setButtonLog([]);
-    nativeTimer()?.clearButtonLog().catch(logError('clearButtonLog'));
-  };
-
   const handleClose = () => {
     nativeTimer()?.close().catch(logError('close'));
-  };
-
-  const handleGainMode = (legacy: boolean) => {
-    nativeTimer()
-      ?.setGainLegacyMode(legacy)
-      .then(applyState)
-      .catch(logError('setGainLegacyMode'));
   };
 
   const statusText =
@@ -335,27 +298,13 @@ const App = () => {
       ? 'Starts when Audible plays'
       : 'Stopped';
 
-  const gainNote = !native.gainSupported
-    ? 'Volume fine-tuning needs Android 9 or newer.'
+  const gainProblem = !native.gainSupported
+    ? 'Needs Android 9 or newer.'
     : native.gainError
-    ? `Volume fine-tuning is unavailable on this device (${native.gainError}).`
+    ? `Unavailable on this device (${native.gainError}).`
     : native.gainOverridden
-    ? 'Another app (e.g. Precise Volume) is controlling the audio effect. Turn it off to use this slider.'
-    : gainDb >= 0
-    ? 'Off – audio plays at the normal system volume.'
-    : !native.gainApplied
-    ? native.gainLegacyMode
-      ? 'Not applied. The Legacy mix effect is not active; try Audible sessions instead.'
-      : native.gainSessionCount > 0
-      ? 'Attenuation is not active on the detected session. Pause and resume Audible, then retry.'
-      : native.gainDetectionGranted
-      ? 'Not applied yet. Audio detection permission is granted, but no Audible audio session was found. Start Audible playback, then retry audio detection.'
-      : 'Not applied: no Audible audio session detected. Pause and resume Audible. If it stays undetected, complete the audio detection setup below (Android 10+).'
-    : native.gainLegacyMode
-    ? 'Legacy output-mix effect configured. Some phones bypass it; use Audible sessions if the sound does not change.'
-    : `Audible session effect configured: target ${gainPercent(
-        gainDb,
-      )}% of the current system volume.`;
+    ? 'Another equalizer app is controlling the audio effect.'
+    : null;
 
   return (
     <SafeAreaProvider>
@@ -540,92 +489,33 @@ const App = () => {
                 <Text style={styles.nudgeButtonText}>+</Text>
               </TouchableOpacity>
             </View>
+            {gainProblem && (
+              <Text testID="gain-status" style={styles.infoText}>
+                {gainProblem}
+              </Text>
+            )}
             <View style={styles.presetsGrid}>
-              <TouchableOpacity
-                testID="gain-session-mode"
-                style={[
-                  styles.presetButton,
-                  !native.gainLegacyMode && styles.presetButtonActive,
-                ]}
-                onPress={() => handleGainMode(false)}
-              >
-                <Text style={styles.presetButtonText}>Audible sessions</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID="gain-legacy-mode"
-                style={[
-                  styles.presetButton,
-                  native.gainLegacyMode && styles.presetButtonActive,
-                ]}
-                onPress={() => handleGainMode(true)}
-              >
-                <Text style={styles.presetButtonText}>Legacy mix</Text>
-              </TouchableOpacity>
-            </View>
-            <Text testID="gain-status" style={styles.infoText}>
-              {gainNote}
-            </Text>
-            <Text style={styles.infoTextSmall}>
-              Targets gain below the quietest system volume step without
-              changing Android's volume levels. Device support is required. Turn
-              off other equalizers such as Precise Volume. Legacy mix can affect
-              all audio. Removed when the app is closed.
-            </Text>
-            {!native.gainLegacyMode && !native.gainDetectionGranted && (
-              <View testID="gain-detection-help">
-                <Text style={styles.infoText}>
-                  Audio detection permission is not granted. When Audible does
-                  not announce its session, the slider cannot change its volume.
-                  On your Pixel 7, use Audible sessions and enable audio
-                  detection from a trusted computer with USB debugging
-                  authorized (Android 10+). The app cannot grant this diagnostic
-                  permission itself.
-                </Text>
-                <Text selectable style={styles.infoTextSmall}>
-                  adb shell pm grant com.sleeptimer android.permission.DUMP
-                </Text>
-                <Text style={styles.infoTextSmall}>
-                  After granting it, play Audible and tap Retry audio detection.
-                  Legacy mix is not a replacement for this setup on phones that
-                  bypass global effects.
-                </Text>
-              </View>
-            )}
-            {!native.gainLegacyMode && native.gainDetectionGranted && (
-              <Text
-                testID="gain-detection-granted"
-                style={styles.infoTextSmall}
-              >
-                Audio detection permission: granted.
-              </Text>
-            )}
-            <TouchableOpacity
-              testID="gain-retry"
-              style={styles.secondaryButton}
-              onPress={refresh}
-            >
-              <Text style={styles.secondaryButtonText}>
-                Retry audio detection
-              </Text>
-            </TouchableOpacity>
-            {gainDb < 0 && (
+              {!native.gainDetectionGranted && (
+                <TouchableOpacity
+                  testID="gain-retry"
+                  style={styles.presetButton}
+                  onPress={refresh}
+                >
+                  <Text style={styles.presetButtonText}>Retry</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 testID="gain-reset"
-                style={styles.secondaryButton}
+                style={styles.presetButton}
                 onPress={() => nudgeGain(-gainDb)}
               >
-                <Text style={styles.secondaryButtonText}>Reset to 0 dB</Text>
+                <Text style={styles.presetButtonText}>Reset</Text>
               </TouchableOpacity>
-            )}
+            </View>
           </View>
 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Headphone buttons</Text>
-            <Text style={styles.infoText}>
-              Play/pause starts Audible and the timer with the screen off; when
-              the timer runs out Audible pauses. Double-press the phone's volume
-              down while the app is open to skip back.
-            </Text>
             <View style={styles.presetsGrid}>
               <TouchableOpacity
                 testID="headset-steps-on"
@@ -649,17 +539,17 @@ const App = () => {
                 <Text style={styles.presetButtonText}>System volume</Text>
               </TouchableOpacity>
             </View>
-            <Text testID="headset-steps-status" style={styles.infoTextSmall}>
-              {!native.gainSupported
-                ? 'Fine steps need Android 9 or newer.'
-                : native.headsetStepsEnabled
-                ? `Bluetooth headphone volume buttons move volume fine-tune by ${GAIN_STEP_DB} dB while Audible plays (screen off or this app open). At 0 dB, volume up raises the system volume. Double-press volume up to hear the time (24-hour). ${
-                    native.keyFilterEnabled
-                      ? 'Phone volume buttons are recognised and change the system volume as usual.'
-                      : "Turn on the key filter below so the phone's own volume buttons keep changing the system volume with the screen off."
-                  }`
-                : 'Headphone volume buttons change the system volume as usual.'}
-            </Text>
+            {native.headsetStepsEnabled && !native.keyFilterEnabled && (
+              <TouchableOpacity
+                testID="open-key-filter"
+                style={styles.secondaryButton}
+                onPress={handleOpenKeyFilter}
+              >
+                <Text style={styles.secondaryButtonText}>
+                  Enable phone button detection
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <TouchableOpacity
@@ -672,56 +562,6 @@ const App = () => {
           <Text style={styles.closeHint}>
             Stops the timer and volume fine-tune and fully shuts the app down.
           </Text>
-
-          <View style={styles.card} testID="button-log">
-            <Text style={styles.cardTitle}>Button log</Text>
-            <Text style={styles.infoText}>
-              Press your headphone buttons to see what reaches the phone: KEY
-              lines are button presses, VOLUME lines are media-volume changes.
-            </Text>
-            <Text testID="key-filter-status" style={styles.infoTextSmall}>
-              {native.keyFilterEnabled
-                ? 'Key filter: on – keys are logged with the screen off.'
-                : 'Key filter: off – keys are only logged while this screen is open. Enable "Sleep timer button log" in Accessibility settings. If it is greyed out, open App info › ⋮ › Allow restricted settings first.'}
-            </Text>
-            <View style={styles.presetsGrid}>
-              {!native.keyFilterEnabled && (
-                <TouchableOpacity
-                  testID="open-key-filter"
-                  style={styles.presetButton}
-                  onPress={handleOpenKeyFilter}
-                >
-                  <Text style={styles.presetButtonText}>Enable key filter</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                testID="clear-log"
-                style={styles.presetButton}
-                onPress={handleClearLog}
-              >
-                <Text style={styles.presetButtonText}>Clear</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.logBox}>
-              {buttonLog.length === 0 ? (
-                <Text style={styles.logLine}>No events yet.</Text>
-              ) : (
-                buttonLog
-                  .slice()
-                  .reverse()
-                  .map((entry, index) => (
-                    <Text
-                      key={`${buttonLog.length - index}`}
-                      selectable
-                      style={styles.logLine}
-                      testID="log-entry"
-                    >
-                      {entry}
-                    </Text>
-                  ))
-              )}
-            </View>
-          </View>
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -962,18 +802,6 @@ const styles = StyleSheet.create({
     color: '#cf6679',
     fontSize: 17,
     fontWeight: 'bold',
-  },
-  logBox: {
-    marginTop: 16,
-    padding: 10,
-    borderRadius: 8,
-    backgroundColor: '#0a0a0a',
-  },
-  logLine: {
-    fontSize: 11,
-    color: '#c0c0c0',
-    fontFamily: 'monospace',
-    marginBottom: 4,
   },
   closeHint: {
     fontSize: 12,

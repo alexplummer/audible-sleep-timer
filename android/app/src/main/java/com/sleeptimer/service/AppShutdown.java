@@ -85,7 +85,6 @@ public final class AppShutdown {
         runSafely(() -> AudibleController.get(app).shutdown());
         runSafely(() -> GainController.get(app).release());
         runSafely(() -> AudibleListenerService.unbind(app));
-        runSafely(() -> ButtonLog.get(app).stopObserving());
         runSafely(() -> HeadsetButtons.get(app).stopObserving());
         runSafely(() -> ForegroundService.stop(app));
         runSafely(() -> NotificationManagerCompat.from(app).cancel(ForegroundService.NOTIFICATION_ID));

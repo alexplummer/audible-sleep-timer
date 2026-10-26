@@ -17,13 +17,11 @@ import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
-import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 import com.sleeptimer.service.AppShutdown;
 import com.sleeptimer.service.AudibleController;
 import com.sleeptimer.service.AudibleListenerService;
-import com.sleeptimer.service.ButtonLog;
 import com.sleeptimer.service.GainController;
 import com.sleeptimer.service.HeadsetButtons;
 import com.sleeptimer.service.SleepTimer;
@@ -31,11 +29,10 @@ import com.sleeptimer.service.SleepTimer;
 import java.util.Locale;
 
 /** JS bridge for the native sleep timer, Audible state and gain control. */
-public class SleepTimerModule extends ReactContextBaseJavaModule implements SleepTimer.Listener, ButtonLog.Listener {
+public class SleepTimerModule extends ReactContextBaseJavaModule implements SleepTimer.Listener {
 
     public static final String NAME = "SleepTimer";
     public static final String EVENT_STATE_CHANGED = "SleepTimerStateChanged";
-    public static final String EVENT_BUTTON_LOG = "SleepTimerButtonLog";
     private static final String TAG = "SleepTimerModule";
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -43,7 +40,6 @@ public class SleepTimerModule extends ReactContextBaseJavaModule implements Slee
     public SleepTimerModule(ReactApplicationContext context) {
         super(context);
         main.post(() -> SleepTimer.get(context).addListener(this));
-        ButtonLog.get(context).addListener(this);
     }
 
     @NonNull
@@ -56,7 +52,6 @@ public class SleepTimerModule extends ReactContextBaseJavaModule implements Slee
     public void invalidate() {
         Context context = getReactApplicationContext();
         main.post(() -> SleepTimer.get(context).removeListener(this));
-        ButtonLog.get(context).removeListener(this);
         super.invalidate();
     }
 
@@ -70,31 +65,6 @@ public class SleepTimerModule extends ReactContextBaseJavaModule implements Slee
         } catch (RuntimeException e) {
             Log.w(TAG, "Could not emit state", e);
         }
-    }
-
-    @Override
-    public void onButtonLogEntry(String entry) {
-        ReactApplicationContext context = getReactApplicationContext();
-        if (!context.hasActiveReactInstance()) return;
-        try {
-            context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                    .emit(EVENT_BUTTON_LOG, entry);
-        } catch (RuntimeException e) {
-            Log.w(TAG, "Could not emit button log", e);
-        }
-    }
-
-    @ReactMethod
-    public void getButtonLog(Promise promise) {
-        WritableArray array = Arguments.createArray();
-        for (String entry : ButtonLog.get(ctx()).getEntries()) array.pushString(entry);
-        promise.resolve(array);
-    }
-
-    @ReactMethod
-    public void clearButtonLog(Promise promise) {
-        ButtonLog.get(ctx()).clear();
-        promise.resolve(null);
     }
 
     @ReactMethod
@@ -142,11 +112,6 @@ public class SleepTimerModule extends ReactContextBaseJavaModule implements Slee
     @ReactMethod
     public void setGain(double db, Promise promise) {
         run(promise, () -> GainController.get(ctx()).setGainDb((float) db));
-    }
-
-    @ReactMethod
-    public void setGainLegacyMode(boolean enabled, Promise promise) {
-        run(promise, () -> GainController.get(ctx()).setLegacyMode(enabled));
     }
 
     @ReactMethod
@@ -230,7 +195,7 @@ public class SleepTimerModule extends ReactContextBaseJavaModule implements Slee
         map.putBoolean("gainDetectionGranted", gain.hasDetectionPermission());
         map.putInt("gainSessionCount", gain.getSessionCount());
         map.putString("gainError", gain.getError());
-        map.putBoolean("keyFilterEnabled", ButtonLog.isKeyFilterEnabled(context));
+        map.putBoolean("keyFilterEnabled", HeadsetButtons.isKeyFilterEnabled(context));
         map.putBoolean("headsetStepsEnabled", HeadsetButtons.get(context).isEnabled());
         return map;
     }

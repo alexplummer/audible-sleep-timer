@@ -74,17 +74,41 @@ public class HeadsetButtonsTest {
     }
 
     @Test
-    public void doubleUpSpeaksTimeAndUndoesFirstStep() {
-        env.volume = 11;
-        buttons.onVolumeChanged(11);
+    public void doubleDownSpeaksTimeAndUndoesFirstStep() {
+        env.volume = 9;
+        buttons.onVolumeChanged(9);
         env.volume = 10;
         buttons.onVolumeChanged(10);
-        assertEquals(-19.5f, env.gain, 0.001f);
+        assertEquals(-20.5f, env.gain, 0.001f);
         env.now += HeadsetButtons.DOUBLE_TAP_MS - 100;
-        env.volume = 11;
-        buttons.onVolumeChanged(11);
+        env.volume = 9;
+        buttons.onVolumeChanged(9);
         assertEquals(1, env.spoken);
         assertEquals(-20f, env.gain, 0.001f);
+        assertEquals(10, env.volume);
+    }
+
+    @Test
+    public void doubleUpOnlyStepsTwice() {
+        env.volume = 11;
+        buttons.onVolumeChanged(11);
+        env.now += 100;
+        env.volume = 11;
+        buttons.onVolumeChanged(11);
+        assertEquals(-19f, env.gain, 0.001f);
+        assertEquals(0, env.spoken);
+    }
+
+    @Test
+    public void doubleDownAtGainFloorRestoresSystemVolume() {
+        env.gain = -40f;
+        env.volume = 9;
+        buttons.onVolumeChanged(9);
+        assertEquals(9, env.volume);
+        env.now += 100;
+        env.volume = 8;
+        buttons.onVolumeChanged(8);
+        assertEquals(1, env.spoken);
         assertEquals(10, env.volume);
     }
 

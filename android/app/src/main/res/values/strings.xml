@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">sleeptimer</string>
-    <string name="button_logger_label">Sleep timer button log</string>
-    <string name="button_logger_description">Lets Sleep Timer tell the phone\'s own volume buttons apart from Bluetooth headphone buttons, so the phone buttons keep changing the system volume. Also logs button presses to the in-app button log. Buttons keep working normally. No screen content is read.</string>
+    <string name="button_logger_label">Sleep timer phone buttons</string>
+    <string name="button_logger_description">Lets Sleep Timer tell the phone\'s own volume buttons apart from Bluetooth headphone buttons, so the phone buttons keep changing the system volume with the screen off. Buttons keep working normally. No screen content is read.</string>
 </resources>

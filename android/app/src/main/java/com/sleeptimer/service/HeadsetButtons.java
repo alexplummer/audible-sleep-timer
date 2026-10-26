@@ -1,6 +1,7 @@
 package com.sleeptimer.service;
 
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -10,6 +11,8 @@ import android.media.AudioManager;
 import android.os.Build;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.provider.Settings;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
 
@@ -22,7 +25,7 @@ import androidx.annotation.VisibleForTesting;
  * <p>Headsets using AVRCP absolute volume send no key events; they change the media volume
  * directly. While Audible plays over Bluetooth, a media-volume change that is not preceded by a
  * phone volume key is treated as a headset press: the system volume is restored and the gain moves
- * one step instead. A double-press of volume up speaks the current time.
+ * one step instead. A double-press of volume down speaks the current time.
  */
 public final class HeadsetButtons {
 
@@ -42,6 +45,9 @@ public final class HeadsetButtons {
         long now();
     }
 
+    static final String VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION";
+    static final String EXTRA_STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE";
+    static final String EXTRA_STREAM_VALUE = "android.media.EXTRA_VOLUME_STREAM_VALUE";
     static final float STEP_DB = 0.5f;
     static final long DOUBLE_TAP_MS = 700L;
     static final long PHONE_KEY_WINDOW_MS = 1500L;
@@ -56,16 +62,16 @@ public final class HeadsetButtons {
     private boolean observing;
     private int base = -1;
     private long lastPhoneKeyAt = Long.MIN_VALUE / 2;
-    private long lastUpAt = Long.MIN_VALUE / 2;
-    @Nullable private Runnable undoLastUp;
+    private long lastDownAt = Long.MIN_VALUE / 2;
+    @Nullable private Runnable undoLastDown;
     private static volatile boolean appVisible;
 
     private final BroadcastReceiver volumeReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (!ButtonLog.VOLUME_CHANGED_ACTION.equals(intent.getAction())) return;
-            if (intent.getIntExtra(ButtonLog.EXTRA_STREAM_TYPE, -1) != AudioManager.STREAM_MUSIC) return;
-            onVolumeChanged(intent.getIntExtra(ButtonLog.EXTRA_STREAM_VALUE, -1));
+            if (!VOLUME_CHANGED_ACTION.equals(intent.getAction())) return;
+            if (intent.getIntExtra(EXTRA_STREAM_TYPE, -1) != AudioManager.STREAM_MUSIC) return;
+            onVolumeChanged(intent.getIntExtra(EXTRA_STREAM_VALUE, -1));
         }
     };
 
@@ -93,6 +99,20 @@ public final class HeadsetButtons {
         appVisible = visible;
     }
 
+    /** The accessibility key filter lets phone volume keys be recognised with the screen off. */
+    public static boolean isKeyFilterEnabled(Context context) {
+        String enabled = Settings.Secure.getString(context.getContentResolver(),
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        if (TextUtils.isEmpty(enabled)) return false;
+        ComponentName self = new ComponentName(context, ButtonLoggerService.class);
+        TextUtils.SimpleStringSplitter splitter = new TextUtils.SimpleStringSplitter(':');
+        splitter.setString(enabled);
+        for (String part : splitter) {
+            if (self.equals(ComponentName.unflattenFromString(part))) return true;
+        }
+        return false;
+    }
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -108,7 +128,7 @@ public final class HeadsetButtons {
         if (observing || appContext == null || !GainController.isSupported()) return;
         observing = true;
         resetBase();
-        IntentFilter filter = new IntentFilter(ButtonLog.VOLUME_CHANGED_ACTION);
+        IntentFilter filter = new IntentFilter(VOLUME_CHANGED_ACTION);
         // Protected system broadcast: only the system can send it.
         if (Build.VERSION.SDK_INT >= 33) {
             appContext.registerReceiver(volumeReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
@@ -139,7 +159,7 @@ public final class HeadsetButtons {
     @VisibleForTesting
     void resetBase() {
         base = env.getVolume();
-        undoLastUp = null;
+        undoLastDown = null;
     }
 
     @VisibleForTesting
@@ -157,18 +177,18 @@ public final class HeadsetButtons {
         if (passReason == null && !env.isRemapContext()) passReason = "screen on, app in background";
         if (passReason != null) {
             base = value;
-            undoLastUp = null;
+            undoLastDown = null;
             env.log("HEADSET pass-through " + previous + " -> " + value + " (" + passReason + ")");
             return;
         }
 
         boolean up = value > previous;
-        if (up && (value - previous >= 2 || now - lastUpAt <= DOUBLE_TAP_MS)) {
+        if (!up && (previous - value >= 2 || now - lastDownAt <= DOUBLE_TAP_MS)) {
             restore(previous);
-            if (undoLastUp != null && value - previous < 2) undoLastUp.run();
-            undoLastUp = null;
-            lastUpAt = Long.MIN_VALUE / 2;
-            env.log("HEADSET double up -> speak time");
+            if (undoLastDown != null && previous - value < 2) undoLastDown.run();
+            undoLastDown = null;
+            lastDownAt = Long.MIN_VALUE / 2;
+            env.log("HEADSET double down -> speak time");
             env.speakTime();
             return;
         }
@@ -181,22 +201,22 @@ public final class HeadsetButtons {
         if (passToSystem) {
             base = value;
             env.log("HEADSET " + (up ? "up" : "down") + " -> system volume " + value + "/" + max);
-            undoLastUp = up ? () -> {
+            undoLastDown = up ? null : () -> {
                 base = previous;
                 env.setVolume(previous);
-            } : null;
+            };
         } else {
             restore(previous);
             float next = Math.max(GainController.MIN_DB,
                     Math.min(GainController.MAX_DB, gain + (up ? STEP_DB : -STEP_DB)));
             env.setGainDb(next);
             env.log("HEADSET " + (up ? "up" : "down") + " -> gain " + format(next));
-            undoLastUp = up ? () -> {
+            undoLastDown = up ? null : () -> {
                 env.setGainDb(gain);
                 env.log("HEADSET undo -> gain " + format(gain));
-            } : null;
+            };
         }
-        lastUpAt = up ? now : Long.MIN_VALUE / 2;
+        lastDownAt = up ? Long.MIN_VALUE / 2 : now;
     }
 
     private void restore(int volume) {
@@ -287,7 +307,7 @@ public final class HeadsetButtons {
 
         @Override
         public void log(String message) {
-            ButtonLog.get(context).add(message);
+            Log.i(TAG, message);
         }
 
         @Override

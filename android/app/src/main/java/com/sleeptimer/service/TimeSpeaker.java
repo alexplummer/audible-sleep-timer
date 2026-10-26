@@ -70,7 +70,7 @@ public final class TimeSpeaker implements TextToSpeech.OnInitListener {
     public void onInit(int status) {
         if (tts == null) return;
         if (status != TextToSpeech.SUCCESS) {
-            ButtonLog.get(appContext).add("TIME text-to-speech unavailable (" + status + ")");
+            Log.w(TAG, "Text-to-speech unavailable (" + status + ")");
             release();
             return;
         }
@@ -92,8 +92,7 @@ public final class TimeSpeaker implements TextToSpeech.OnInitListener {
         Bundle params = new Bundle();
         params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume());
         int result = tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, params, "time");
-        ButtonLog.get(appContext).add("TIME " + text
-                + (result == TextToSpeech.SUCCESS ? "" : " (speak failed)"));
+        if (result != TextToSpeech.SUCCESS) Log.w(TAG, "Could not speak time " + text);
     }
 
     static String timeText(int hours, int minutes) {

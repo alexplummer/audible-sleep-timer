@@ -263,7 +263,6 @@ public final class AudibleController {
     private void onPlayingObserved(@Nullable Boolean playing) {
         if (playing == null || playing.equals(lastPlaying)) return;
         lastPlaying = playing;
-        ButtonLog.get(appContext).add("AUDIBLE " + (playing ? "playing" : "paused"));
         if (listener != null) listener.onAudiblePlayingChanged(playing);
     }
 
