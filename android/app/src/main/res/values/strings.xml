@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">sleeptimer</string>
+    <string name="button_logger_label">Sleep timer button log</string>
+    <string name="button_logger_description">Logs hardware and headphone button presses (including with the screen off) to the Sleep Timer diagnostic log. Buttons keep working normally. No screen content is read.</string>
 </resources>

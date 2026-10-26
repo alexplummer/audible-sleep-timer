@@ -72,6 +72,7 @@ public class ForegroundService extends Service implements SleepTimer.Listener {
         AudibleController.get(this).startObserving();
         GainController.get(this).activate();
         AudibleListenerService.rebind(this);
+        ButtonLog.get(this).startObserving();
     }
 
     @Override
@@ -94,6 +95,7 @@ public class ForegroundService extends Service implements SleepTimer.Listener {
         AudibleController.get(this).stopObserving();
         GainController.get(this).release();
         AudibleListenerService.unbind(this);
+        ButtonLog.get(this).stopObserving();
         instance = null;
         super.onDestroy();
     }

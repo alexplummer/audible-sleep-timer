@@ -7,6 +7,7 @@ import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
 import { DeviceEventEmitter, NativeModules } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import App, {
+  BUTTON_LOG_EVENT,
   formatTime,
   gainPercent,
   NativeTimerState,
@@ -34,6 +35,7 @@ const baseState: NativeTimerState = {
   gainDetectionGranted: false,
   gainSessionCount: 0,
   gainError: null,
+  keyFilterEnabled: false,
 };
 
 const resolved = (overrides: Partial<NativeTimerState> = {}) =>
@@ -56,6 +58,11 @@ function mockModule() {
     ),
     openNotificationAccessSettings: jest.fn(() => Promise.resolve()),
     close: jest.fn(() => Promise.resolve()),
+    getButtonLog: jest.fn(() =>
+      Promise.resolve(['12:00:00.000  Logging started']),
+    ),
+    clearButtonLog: jest.fn(() => Promise.resolve()),
+    openAccessibilitySettings: jest.fn(() => Promise.resolve()),
   };
   NativeModules.SleepTimer = module;
   return module;
@@ -230,7 +237,7 @@ test('does not present an unattached gain slider as working attenuation', async 
   module.getState = resolved({ gainDb: -20 });
   const renderer = await render();
   expect(text(renderer, 'gain-status')).toContain(
-    'Waiting for an Audible audio session',
+    'Not applied: no Audible audio session detected',
   );
   expect(text(renderer, 'gain-status')).not.toContain('10%');
   expect(
@@ -260,6 +267,7 @@ test('shows verified session configuration separately from legacy mix', async ()
   expect(
     renderer.root.findAllByProps({ testID: 'gain-detection-help' }),
   ).toHaveLength(0);
+  expect(text(renderer, 'gain-detection-granted')).toContain('granted');
 
   await press(renderer, 'gain-legacy-mode');
   expect(module.setGainLegacyMode).toHaveBeenCalledWith(true);
@@ -292,10 +300,68 @@ test('does not claim attenuation when the detected session has no enabled effect
   expect(text(renderer, 'gain-status')).not.toContain('10%');
 });
 
+test('distinguishes missing permission from granted permission with no playback session', async () => {
+  mockModule().getState = resolved({ gainDb: -20 });
+  const renderer = await render();
+  expect(text(renderer, 'gain-status')).toContain(
+    'complete the audio detection setup',
+  );
+
+  await ReactTestRenderer.act(async () => {
+    DeviceEventEmitter.emit(STATE_EVENT, {
+      ...baseState,
+      gainDb: -20,
+      gainDetectionGranted: true,
+    });
+  });
+
+  expect(text(renderer, 'gain-status')).toContain('permission is granted');
+  expect(text(renderer, 'gain-status')).toContain('Start Audible playback');
+  expect(text(renderer, 'gain-status')).not.toContain('setup below');
+  expect(
+    renderer.root.findAllByProps({ testID: 'gain-detection-help' }),
+  ).toHaveLength(0);
+  expect(text(renderer, 'gain-detection-granted')).toContain('granted');
+});
+
 test('warns when another equalizer owns the effect', async () => {
   const module = mockModule();
   module.getState = resolved({ gainDb: -20, gainOverridden: true });
   const renderer = await render();
   expect(text(renderer, 'gain-status')).toContain('Another app');
   expect(text(renderer, 'gain-status')).not.toContain('10%');
+});
+
+test('shows the button log, live entries and key filter controls', async () => {
+  const module = mockModule();
+  const renderer = await render();
+  const entries = () =>
+    renderer.root
+      .findAllByProps({ testID: 'log-entry' })
+      .filter(node => typeof node.type === 'string')
+      .map(node => node.props.children);
+  expect(entries()).toEqual(['12:00:00.000  Logging started']);
+
+  await ReactTestRenderer.act(async () => {
+    DeviceEventEmitter.emit(BUTTON_LOG_EVENT, '12:00:01.000  KEY volume up');
+  });
+  expect(entries()[0]).toBe('12:00:01.000  KEY volume up');
+  expect(text(renderer, 'key-filter-status')).toContain('Key filter: off');
+
+  await press(renderer, 'open-key-filter');
+  expect(module.openAccessibilitySettings).toHaveBeenCalled();
+  await press(renderer, 'clear-log');
+  expect(module.clearButtonLog).toHaveBeenCalled();
+  expect(entries()).toHaveLength(0);
+
+  await ReactTestRenderer.act(async () => {
+    DeviceEventEmitter.emit(STATE_EVENT, {
+      ...baseState,
+      keyFilterEnabled: true,
+    });
+  });
+  expect(text(renderer, 'key-filter-status')).toContain('Key filter: on');
+  expect(
+    renderer.root.findAllByProps({ testID: 'open-key-filter' }),
+  ).toHaveLength(0);
 });

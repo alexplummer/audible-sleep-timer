@@ -42,6 +42,7 @@ export interface NativeTimerState {
   gainDetectionGranted: boolean;
   gainSessionCount: number;
   gainError: string | null;
+  keyFilterEnabled: boolean;
 }
 
 interface SleepTimerModule {
@@ -53,10 +54,15 @@ interface SleepTimerModule {
   setGain(db: number): Promise<NativeTimerState>;
   setGainLegacyMode(enabled: boolean): Promise<NativeTimerState>;
   openNotificationAccessSettings(): Promise<void>;
+  getButtonLog(): Promise<string[]>;
+  clearButtonLog(): Promise<void>;
+  openAccessibilitySettings(): Promise<void>;
   close(): Promise<void>;
 }
 
 export const STATE_EVENT = 'SleepTimerStateChanged';
+export const BUTTON_LOG_EVENT = 'SleepTimerButtonLog';
+const MAX_LOG_ENTRIES = 300;
 const PRESET_MINUTES = [15, 20, 30, 45, 60];
 const GAIN_STEP_DB = 0.5;
 
@@ -79,6 +85,7 @@ const DEFAULT_STATE: NativeTimerState = {
   gainDetectionGranted: false,
   gainSessionCount: 0,
   gainError: null,
+  keyFilterEnabled: false,
 };
 
 const nativeTimer = (): SleepTimerModule | undefined =>
@@ -126,6 +133,7 @@ const App = () => {
   const [gainDb, setGainDb] = useState(DEFAULT_STATE.gainDb);
   const [endAt, setEndAt] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  const [buttonLog, setButtonLog] = useState<string[]>([]);
   const editingDuration = useRef(false);
   const editingGain = useRef(false);
 
@@ -160,6 +168,19 @@ const App = () => {
       appStateSub.remove();
     };
   }, [applyState, refresh]);
+
+  useEffect(() => {
+    nativeTimer()
+      ?.getButtonLog()
+      .then(entries => setButtonLog(entries.slice(-MAX_LOG_ENTRIES)))
+      .catch(logError('getButtonLog'));
+    const logSub = DeviceEventEmitter.addListener(
+      BUTTON_LOG_EVENT,
+      (entry: string) =>
+        setButtonLog(prev => [...prev, entry].slice(-MAX_LOG_ENTRIES)),
+    );
+    return () => logSub.remove();
+  }, []);
 
   useEffect(() => {
     if (native.state !== 'running') {
@@ -273,6 +294,17 @@ const App = () => {
       .catch(logError('openNotificationAccessSettings'));
   };
 
+  const handleOpenKeyFilter = () => {
+    nativeTimer()
+      ?.openAccessibilitySettings()
+      .catch(logError('openAccessibilitySettings'));
+  };
+
+  const handleClearLog = () => {
+    setButtonLog([]);
+    nativeTimer()?.clearButtonLog().catch(logError('clearButtonLog'));
+  };
+
   const handleClose = () => {
     nativeTimer()?.close().catch(logError('close'));
   };
@@ -302,9 +334,13 @@ const App = () => {
     : gainDb >= 0
     ? 'Off – audio plays at the normal system volume.'
     : !native.gainApplied
-    ? native.gainSessionCount > 0
+    ? native.gainLegacyMode
+      ? 'Not applied. The Legacy mix effect is not active; try Audible sessions instead.'
+      : native.gainSessionCount > 0
       ? 'Attenuation is not active on the detected session. Pause and resume Audible, then retry.'
-      : 'Waiting for an Audible audio session. Pause and resume Audible, or enable better audio detection below.'
+      : native.gainDetectionGranted
+      ? 'Not applied yet. Audio detection permission is granted, but no Audible audio session was found. Start Audible playback, then retry audio detection.'
+      : 'Not applied: no Audible audio session detected. Pause and resume Audible. If it stays undetected, complete the audio detection setup below (Android 10+).'
     : native.gainLegacyMode
     ? 'Legacy output-mix effect configured. Some phones bypass it; use Audible sessions if the sound does not change.'
     : `Audible session effect configured: target ${gainPercent(
@@ -528,15 +564,30 @@ const App = () => {
             {!native.gainLegacyMode && !native.gainDetectionGranted && (
               <View testID="gain-detection-help">
                 <Text style={styles.infoText}>
-                  If Audible does not expose its audio session, enable better
-                  audio detection on Android 10+ using ADB from a trusted
-                  computer. This optional diagnostic permission cannot be
-                  granted by the app.
+                  Audio detection permission is not granted. When Audible does
+                  not announce its session, the slider cannot change its volume.
+                  On your Pixel 7, use Audible sessions and enable audio
+                  detection from a trusted computer with USB debugging
+                  authorized (Android 10+). The app cannot grant this diagnostic
+                  permission itself.
                 </Text>
                 <Text selectable style={styles.infoTextSmall}>
                   adb shell pm grant com.sleeptimer android.permission.DUMP
                 </Text>
+                <Text style={styles.infoTextSmall}>
+                  After granting it, play Audible and tap Retry audio detection.
+                  Legacy mix is not a replacement for this setup on phones that
+                  bypass global effects.
+                </Text>
               </View>
+            )}
+            {!native.gainLegacyMode && native.gainDetectionGranted && (
+              <Text
+                testID="gain-detection-granted"
+                style={styles.infoTextSmall}
+              >
+                Audio detection permission: granted.
+              </Text>
             )}
             <TouchableOpacity
               testID="gain-retry"
@@ -578,6 +629,56 @@ const App = () => {
           <Text style={styles.closeHint}>
             Stops the timer and volume fine-tune and fully shuts the app down.
           </Text>
+
+          <View style={styles.card} testID="button-log">
+            <Text style={styles.cardTitle}>Button log</Text>
+            <Text style={styles.infoText}>
+              Press your headphone buttons to see what reaches the phone: KEY
+              lines are button presses, VOLUME lines are media-volume changes.
+            </Text>
+            <Text testID="key-filter-status" style={styles.infoTextSmall}>
+              {native.keyFilterEnabled
+                ? 'Key filter: on – keys are logged with the screen off.'
+                : 'Key filter: off – keys are only logged while this screen is open. Enable "Sleep timer button log" in Accessibility settings. If it is greyed out, open App info › ⋮ › Allow restricted settings first.'}
+            </Text>
+            <View style={styles.presetsGrid}>
+              {!native.keyFilterEnabled && (
+                <TouchableOpacity
+                  testID="open-key-filter"
+                  style={styles.presetButton}
+                  onPress={handleOpenKeyFilter}
+                >
+                  <Text style={styles.presetButtonText}>Enable key filter</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                testID="clear-log"
+                style={styles.presetButton}
+                onPress={handleClearLog}
+              >
+                <Text style={styles.presetButtonText}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.logBox}>
+              {buttonLog.length === 0 ? (
+                <Text style={styles.logLine}>No events yet.</Text>
+              ) : (
+                buttonLog
+                  .slice()
+                  .reverse()
+                  .map((entry, index) => (
+                    <Text
+                      key={`${buttonLog.length - index}`}
+                      selectable
+                      style={styles.logLine}
+                      testID="log-entry"
+                    >
+                      {entry}
+                    </Text>
+                  ))
+              )}
+            </View>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -818,6 +919,18 @@ const styles = StyleSheet.create({
     color: '#cf6679',
     fontSize: 17,
     fontWeight: 'bold',
+  },
+  logBox: {
+    marginTop: 16,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#0a0a0a',
+  },
+  logLine: {
+    fontSize: 11,
+    color: '#c0c0c0',
+    fontFamily: 'monospace',
+    marginBottom: 4,
   },
   closeHint: {
     fontSize: 12,

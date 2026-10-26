@@ -12,6 +12,7 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnable
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 import com.sleeptimer.service.AppShutdown
 import com.sleeptimer.service.AudibleController
+import com.sleeptimer.service.ButtonLog
 import com.sleeptimer.service.ForegroundService
 import com.sleeptimer.service.SleepTimer
 
@@ -51,6 +52,12 @@ class MainActivity : ReactActivity() {
   override fun onDestroy() {
     AppShutdown.clearActivity(this)
     super.onDestroy()
+  }
+
+  override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    // With the key filter on, the accessibility service already logs every key.
+    if (!ButtonLog.isKeyFilterEnabled(this)) ButtonLog.get(this).logKey("app", event)
+    return super.dispatchKeyEvent(event)
   }
 
   /** Double-press volume down (while the app is open) skips back in Audible. */

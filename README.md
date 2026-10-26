@@ -1,148 +1,58 @@
-
 <img width="280" src="https://github.com/user-attachments/assets/57f3e4c5-6dcc-4288-a0e9-d45732df3dba" />
 
+# Audible Sleep Timer
 
-# 🎧 Audible Sleep Timer
+A small Android companion app for Audible. I built it for my own use: I listen in bed with Bluetooth sleep headband headphones and want to control audiobooks without looking at the phone screen.
 
-This fixes the built in sleep timer for Audible allowing you to restart the timer from your bluetooth headphones throughtout the night without looking at the screen.
- 
-This is a [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+Audible's own sleep timer is unreliable. It often fails to restart, and you have to unlock the phone to set it again. This app replaces it with a timer that follows Audible's playback, so pressing play on the headphones starts a new countdown.
 
----
+## Features
 
-## ✨ Features
+- **Headphone-driven timer** – press play on your headphones and the timer starts with Audible; it pauses and resumes with playback.
+- **Auto-pause** – Audible pauses when the timer runs out. Press play again for another full timer.
+- **Short-pause memory** – resume within five minutes to continue the remaining time; later resumes start a full timer.
+- **Notification controls** – live countdown, 15 / 45 minute presets and Close, all from the notification.
+- **Runs with the screen off** – the countdown is native and uses exact alarms, so it survives Doze.
+- **Volume fine-tune** – lower Audible's output from 0 to -40 dB in 0.5 dB steps, below Android's quietest volume step (Android 9+).
+- **Chapter back** – double-press volume down while the app is open.
+- **Button log** – shows what your headphone buttons send to the phone (key presses, volume changes, device connects).
+- **Clean close** – Close stops the timer, removes volume changes and fully shuts the app down. It never pauses Audible on close.
 
-### 🎛️ Core Functionality
-- **🎛️ Hardware Button Control**: Start, pause, and resume the timer using your earbuds' play/pause button  
-- **⏰ Real-time Countdown**: Remaining time shown directly in your notification panel  
-- **⏸️ Smart Pause/Resume**: Timer automatically pauses/resumes along with playback  
-- **🔕 Auto-Pause**: Automatically pauses Audible when the timer expires  
-- **📱 Persistent Notification**: Always shows current timer status and remaining time  
-- **🎯 One-Touch Close**: Close the app entirely from the notification  
-- **🔉 Volume Fine-Tune**: Reduce output gain from 0 to -40 dB in 0.5 dB steps without changing Android's volume level (Android 9+, device support required)
+## Install
 
-### 🆕 Advanced Features
-- **⚡ Quick Timer Presets**: Set timer instantly with notification buttons (15, 45 min)  
-- **🌙 Dark Theme**: Beautiful dark interface optimized for bedtime use  
-- **⏮️ Chapter Navigation**: Double-press volume down to go back a chapter (when app is open)   
+1. Download the APK from [Releases](https://github.com/alexplummer/audible-sleep-timer/releases/latest) and install it (allow installs from unknown sources).
+2. Open the app and allow notifications.
+3. Grant **notification access** from the in-app button. It is used only to see and control Audible's playback; notification contents are not read.
+4. Set a duration, then press play on your headphones.
 
----
+Requires Android 7+ and the Audible app.
 
-## 🚀 How it Works
+### Volume fine-tune setup
 
-### 🎯 Basic Usage
-1. **Set your timer** – Choose duration with slider, presets (15-60 min), or text input  
-2. **Start the timer** – Press the play button on your earbuds to start both Audible and the timer  
-3. **Sleep peacefully** – The timer counts down in real-time, visible in your notification  
-4. **Automatic shutoff** – Audible pauses when the timer expires  
-5. **Full control** – Pause/resume anytime using your earbuds  
-6. **Finish listening** – Tap **Close app** or the notification's **Close** action to cancel the timer, remove gain attenuation, release wake locks and media-session observation, and remove the app's task. It stays disabled until you open the app again; closing does not pause Audible.
+Keep Android's media volume above mute and lower the in-app slider. Turn off other equalizers such as Precise Volume. If the app says no Audible audio session was detected, grant audio detection once from a computer with USB debugging enabled:
 
-On first launch, allow notifications and grant **notification access** using the in-app settings button. Notification access is used only to observe and control Audible's media session; notification contents are not read. Without it, automatic headphone playback tracking is unavailable.
+```sh
+adb -d shell pm grant com.sleeptimer android.permission.DUMP
+```
 
-### ⚡ Quick Controls
-- **Notification Presets**: Tap 15m or 45m buttons directly from notification  
-- **Auto-Restart**: Change timer duration while running - it automatically restarts with new time  
-- **Volume Navigation**: Double-press volume down to go back a chapter (when app is open)  
-- **Playback pauses**: Resuming within five minutes continues the remaining timer; resuming later starts a full timer.
-- **Fine-tune**: Keep Android's media volume above mute, then lower the in-app gain slider. **0 dB** disables attenuation; **-20 dB** targets 10% and **-40 dB** targets 1% of the current signal amplitude (not perceived loudness). The default **Audible sessions** mode attaches Android's DynamicsProcessing input gain to Audible's audio-session IDs. Turn off conflicting equalizers such as Precise Volume first.
+Then play Audible and tap **Retry audio detection**. Revoke with `adb -d shell pm revoke com.sleeptimer android.permission.DUMP`. **Legacy mix** is a fallback that affects all audio and is bypassed on some phones.
 
-The app no longer plays a silent audio loop, creates a competing media session, or requests audio focus. Audible and Android handle headphone buttons directly; the timer follows Audible's playback state. The countdown runs natively, including while the screen is off.
+### Button log
 
-### Fine-tune compatibility and session detection
+The log at the bottom of the app records:
 
-Version 2.1.0 only attached gain to Android's global output mix (session 0). Android deprecates this attachment, and some phones accept the configuration but bypass it during playback. The slider also displayed a percentage without checking that an effect was active. Version 2.1.1 defaults to Audible's own audio sessions, verifies effect control, enablement and per-channel gain readback, and reports waiting/error states instead of implying that the slider always works. Configuration checks cannot measure actual sound output.
+- `KEY` – a button press, with the input device name (for example the phone's built-in keys or a Bluetooth `AVRCP` device).
+- `VOLUME` – a media volume change and the current output device.
+- `DEVICE` / `AUDIBLE` – headphones connecting, and Audible playing or pausing.
 
-- **Audible sessions** listens for Android's standard audio-effect session open/close broadcasts. Open the timer app, then pause and resume Audible. A media-session token used for headphone controls is not an audio-session ID.
-- **Legacy mix** is an explicit, persisted fallback. It targets session 0 and may affect all audio, or do nothing on an unsupported device. It is not a guaranteed fix.
-- If Audible does not broadcast an audio-session ID, **better audio detection** is optional on Android 10+. Connect a trusted computer with Android platform-tools, enable USB debugging and authorize that computer, then run:
+Without extra setup, keys are only logged while the app is open. To log them with the screen off, tap **Enable key filter** and turn on **Sleep timer button log** in Accessibility settings. On Android 13+, if the switch is greyed out, open App info › ⋮ › **Allow restricted settings** first. The filter only observes keys. Buttons keep working normally and no screen content is read. Turn it off when you are done.
 
-  ```sh
-  adb shell pm grant com.sleeptimer android.permission.DUMP
-  ```
+## Build
 
-  Select **Audible sessions**, play Audible, and tap **Retry audio detection**. Notification access is still needed for the timer's playback tracking. DUMP is a broad diagnostic permission, not a normal in-app permission prompt: the app reads audio-policy diagnostics locally, keeps only Audible's output-session IDs and does not save or log the raw dump. To remove this permission:
-
-  ```sh
-  adb shell pm revoke com.sleeptimer android.permission.DUMP
-  ```
-
-  Turn USB debugging off when finished. Android 9 supports broadcast-based discovery and Legacy mode, but not the optional diagnostic path.
-
-Session discovery and effects stop when the app is closed. Manufacturers, Bluetooth/offloaded playback paths and other equalizers can still bypass or take control of effects. If an effect is configured but the sound does not change, try the other mode and check for competing effects; no hardware-independent guarantee is possible.
-
-Precise Volume's official documentation describes [Legacy global-stream mode versus better audio-session detection](https://precisevolume.phascinate.com/docs/better-audio-detection/), [compatibility troubleshooting](https://precisevolume.phascinate.com/docs/faq/app-no-work/), and [DSP gain controls](https://precisevolume.phascinate.com/docs/faq/eq-effects-explained/). Its proprietary implementation is not public; this app uses Android's documented [AudioEffect session attachment](https://developer.android.com/reference/android/media/audiofx/AudioEffect) and [DynamicsProcessing input gain](https://developer.android.com/reference/android/media/audiofx/DynamicsProcessing), not copied Precise Volume internals.
-
-### 🎛️ Hardware Button Functions
-- **Single Play/Pause**: Start timer + Audible, or pause/resume playback  
-- **Volume Down Double-Press**: Previous chapter (500ms window)  
-- **Volume Single Press**: Normal volume control  
-
----
-
-## 🎵 Perfect For
-
-- **Bedtime listening** – Fall asleep to audiobooks without them playing all night  
-- **Meditation sessions** – Focused listening periods  
-- **Commutes** – Automatically pause at your destination  
-- **Study sessions** – Time-boxed learning with audiobooks  
-
----
-
-## 📱 Requirements
-
-- Android device (Android 7 / API 24+; volume fine-tuning requires Android 9 / API 28+ and a compatible output effect)
-- Audible app installed  
-- Earbuds or headphones with a play/pause button  
-
----
-
-## 🔧 Installation & Setup
-
-### Option 1: Install APK (Recommended)
-
-1. Download the latest APK from [Releases](https://github.com/alexplummer/audible-sleep-timer/releases/latest)
-2. Enable **Install from unknown sources** in Android settings  
-3. Install the APK file  
-4. Open the app and set your desired timer duration  
-
-### Option 2: Build from Source
-
-#### Prerequisites
-- Node.js (v20 or higher)  
-- Android Studio with Android SDK  
-- React Native development environment  
-
-#### Build Steps
 ```bash
-# Clone the repo
-git clone https://github.com/alexplummer/audible-sleep-timer.git
-cd audible-sleep-timer
-
-# Install dependencies
 npm install
-
-# Run app on Android
-npm run android
-
-# Build production APK
-npm run build
+npm test -- --runInBand && npx tsc --noEmit && npm run lint
+npm run build   # android/app/build/outputs/apk/release/app-release.apk
 ```
 
-The standalone APK is written to `android/app/build/outputs/apk/release/app-release.apk`; it includes the JavaScript bundle and does not need Metro. Releases currently retain the repository's existing debug signing certificate for compatibility with earlier sideloaded versions. This is not a private production signing key and must not be used for app-store distribution.
-
-### Publishing a Release
-
-Update the package version, lockfile, and Android `versionName`, and increase Android `versionCode` before creating an annotated `vX.Y.Z` tag. Push the commit and tag to this repository. The **Android release** GitHub Actions workflow validates and builds the tagged source, then publishes a standalone APK and `SHA256SUMS.txt` using GitHub's built-in workflow token. No personal access token is needed; an SSH key with repository write access is sufficient to push the tag. The tag must match `package.json`.
-
-### Validation
-
-```bash
-npm test -- --runInBand
-npx tsc --noEmit
-npm run lint
-cd android
-bash ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
-```
-
-Before relying on it overnight, check on the target phone and headphones that Audible remains audible after more than an hour with the screen off, both notification presets reset the countdown, and both Close actions remove the notification and leave no timer service running. Verify gain below system volume level 1 and that closing restores normal output. Host tests cannot verify device-specific audio effects, Bluetooth behavior, or vendor battery restrictions.
+To publish, bump `package.json`, the lockfile, and Android `versionName`/`versionCode`, then push a `vX.Y.Z` tag. The **Android release** workflow builds the APK and attaches it to a GitHub release. Release APKs use the repository's debug signing key so they install over earlier versions. They are not suitable for app stores.
