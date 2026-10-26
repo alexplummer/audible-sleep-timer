@@ -49,7 +49,9 @@ public final class HeadsetButtons {
     static final String EXTRA_STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE";
     static final String EXTRA_STREAM_VALUE = "android.media.EXTRA_VOLUME_STREAM_VALUE";
     static final float STEP_DB = 0.5f;
-    static final long DOUBLE_TAP_MS = 700L;
+    static final long DOUBLE_TAP_MS = 900L;
+    /** A repeat in the same direction this soon is the same press (echo or multi-step change). */
+    static final long DUPLICATE_MS = 300L;
     static final long PHONE_KEY_WINDOW_MS = 1500L;
     private static final String KEY_ENABLED = "headset_steps_enabled";
     private static final String TAG = "HeadsetButtons";
@@ -63,6 +65,8 @@ public final class HeadsetButtons {
     private int base = -1;
     private long lastPhoneKeyAt = Long.MIN_VALUE / 2;
     private long lastDownAt = Long.MIN_VALUE / 2;
+    private long lastPressAt = Long.MIN_VALUE / 2;
+    private boolean lastPressUp;
     @Nullable private Runnable undoLastDown;
     private static volatile boolean appVisible;
 
@@ -183,9 +187,16 @@ public final class HeadsetButtons {
         }
 
         boolean up = value > previous;
-        if (!up && (previous - value >= 2 || now - lastDownAt <= DOUBLE_TAP_MS)) {
+        if (up == lastPressUp && now - lastPressAt < DUPLICATE_MS) {
             restore(previous);
-            if (undoLastDown != null && previous - value < 2) undoLastDown.run();
+            env.log("HEADSET duplicate " + previous + " -> " + value + " ignored");
+            return;
+        }
+        lastPressAt = now;
+        lastPressUp = up;
+        if (!up && now - lastDownAt <= DOUBLE_TAP_MS) {
+            restore(previous);
+            if (undoLastDown != null) undoLastDown.run();
             undoLastDown = null;
             lastDownAt = Long.MIN_VALUE / 2;
             env.log("HEADSET double down -> speak time");

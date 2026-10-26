@@ -92,11 +92,30 @@ public class HeadsetButtonsTest {
     public void doubleUpOnlyStepsTwice() {
         env.volume = 11;
         buttons.onVolumeChanged(11);
-        env.now += 100;
+        env.now += 400;
         env.volume = 11;
         buttons.onVolumeChanged(11);
         assertEquals(-19f, env.gain, 0.001f);
         assertEquals(0, env.spoken);
+    }
+
+    @Test
+    public void singleDownWithEchoOrBigDropIsOnePress() {
+        env.volume = 9;
+        buttons.onVolumeChanged(9);
+        env.now += 100;
+        env.volume = 9;
+        buttons.onVolumeChanged(9);
+        assertEquals(0, env.spoken);
+        assertEquals(-20.5f, env.gain, 0.001f);
+        assertEquals(10, env.volume);
+
+        env.now += 5_000;
+        env.volume = 8;
+        buttons.onVolumeChanged(8);
+        assertEquals(0, env.spoken);
+        assertEquals(-21f, env.gain, 0.001f);
+        assertEquals(10, env.volume);
     }
 
     @Test
@@ -105,7 +124,7 @@ public class HeadsetButtonsTest {
         env.volume = 9;
         buttons.onVolumeChanged(9);
         assertEquals(9, env.volume);
-        env.now += 100;
+        env.now += 400;
         env.volume = 8;
         buttons.onVolumeChanged(8);
         assertEquals(1, env.spoken);
