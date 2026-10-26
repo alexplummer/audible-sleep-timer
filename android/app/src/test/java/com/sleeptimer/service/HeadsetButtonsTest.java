@@ -64,11 +64,11 @@ public class HeadsetButtonsTest {
     @Test
     public void headsetPressesMoveGainAndRestoreSystemVolume() {
         headset(-1);
-        assertEquals(-20.5f, env.gain, 0.001f);
+        assertEquals(-22f, env.gain, 0.001f);
         assertEquals(10, env.volume);
         headset(1);
         headset(1);
-        assertEquals(-19.5f, env.gain, 0.001f);
+        assertEquals(-18f, env.gain, 0.001f);
         assertEquals(10, env.volume);
         assertEquals(0, env.spoken);
     }
@@ -79,7 +79,7 @@ public class HeadsetButtonsTest {
         buttons.onVolumeChanged(9);
         env.volume = 10;
         buttons.onVolumeChanged(10);
-        assertEquals(-20.5f, env.gain, 0.001f);
+        assertEquals(-22f, env.gain, 0.001f);
         env.now += HeadsetButtons.DOUBLE_TAP_MS - 100;
         env.volume = 9;
         buttons.onVolumeChanged(9);
@@ -95,7 +95,7 @@ public class HeadsetButtonsTest {
         env.now += 400;
         env.volume = 11;
         buttons.onVolumeChanged(11);
-        assertEquals(-19f, env.gain, 0.001f);
+        assertEquals(-16f, env.gain, 0.001f);
         assertEquals(0, env.spoken);
     }
 
@@ -107,14 +107,14 @@ public class HeadsetButtonsTest {
         env.volume = 9;
         buttons.onVolumeChanged(9);
         assertEquals(0, env.spoken);
-        assertEquals(-20.5f, env.gain, 0.001f);
+        assertEquals(-22f, env.gain, 0.001f);
         assertEquals(10, env.volume);
 
         env.now += 5_000;
         env.volume = 8;
         buttons.onVolumeChanged(8);
         assertEquals(0, env.spoken);
-        assertEquals(-21f, env.gain, 0.001f);
+        assertEquals(-24f, env.gain, 0.001f);
         assertEquals(10, env.volume);
     }
 

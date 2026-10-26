@@ -48,7 +48,7 @@ public final class HeadsetButtons {
     static final String VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION";
     static final String EXTRA_STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE";
     static final String EXTRA_STREAM_VALUE = "android.media.EXTRA_VOLUME_STREAM_VALUE";
-    static final float STEP_DB = 0.5f;
+    static final float STEP_DB = 2f;
     static final long DOUBLE_TAP_MS = 900L;
     /** A repeat in the same direction this soon is the same press (echo or multi-step change). */
     static final long DUPLICATE_MS = 300L;
